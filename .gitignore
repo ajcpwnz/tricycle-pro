@@ -1,0 +1,4 @@
+node_modules/
+.tricycle.lock
+*.log
+.DS_Store

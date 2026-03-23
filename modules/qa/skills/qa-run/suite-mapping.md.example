@@ -1,0 +1,87 @@
+# Suite Mapping: Changed Files → Test Suites
+
+When `/qa-run` is invoked without arguments, use this mapping to determine which suites to run based on `git diff --name-only origin/staging`.
+
+If a changed file matches multiple patterns, run all matching suites. Always include prerequisite suites (e.g., AF-AUTH if any authenticated suite is selected).
+
+## Backend
+
+| Path Pattern | Suite(s) |
+|---|---|
+| `apps/backend/src/trpc/routers/auth.ts` | AF-AUTH |
+| `apps/backend/src/trpc/routers/polst.ts` | AF-POLST, AF-VOTE |
+| `apps/backend/src/trpc/routers/social.ts` | AF-SOCIAL |
+| `apps/backend/src/trpc/routers/campaign.ts` | AF-CAMPAIGN |
+| `apps/backend/src/trpc/routers/brand.ts` | AF-BRAND |
+| `apps/backend/src/trpc/routers/user.ts` | AF-USER |
+| `apps/backend/src/trpc/routers/admin*.ts` | AF-FLAG, AF-USER, AF-BRAND |
+| `apps/backend/src/trpc/routers/featureFlag.ts` | AF-FLAG |
+| `apps/backend/src/trpc/routers/notification.ts` | AF-NOTIF |
+| `apps/backend/src/trpc/routers/category.ts` | AF-CATTAG |
+| `apps/backend/src/trpc/routers/embed.ts` | AF-EMBED |
+| `apps/backend/src/trpc/routers/webhook.ts` | AF-CAMPAIGN (webhook-related) |
+| `apps/backend/src/trpc/routers/report.ts` | AF-USER |
+| `apps/backend/src/models/polst.ts` | AF-POLST, AF-VOTE, AF-SOCIAL |
+| `apps/backend/src/models/vote.ts` | AF-VOTE |
+| `apps/backend/src/utils/slug.ts` | AF-SEARCH |
+| `apps/backend/prisma/schema.prisma` | All suites (schema change) |
+
+## Frontend
+
+| Path Pattern | Suite(s) |
+|---|---|
+| `apps/frontend/src/app/(auth)/*` | AF-AUTH |
+| `apps/frontend/src/components/poll/*` | AF-POLST, AF-VOTE, AF-SOCIAL |
+| `apps/frontend/src/components/feed/*` | AF-POLST, AF-NAV |
+| `apps/frontend/src/components/layout/*` | AF-NAV |
+| `apps/frontend/src/components/notifications/*` | AF-NOTIF |
+| `apps/frontend/src/components/settings/*` | AF-SETTINGS |
+| `apps/frontend/src/components/embed/*` | AF-EMBED |
+| `apps/frontend/src/app/[prefix]/*` | AF-SEARCH |
+| `apps/frontend/src/app/p/*` | AF-POLST |
+
+## Manager
+
+| Path Pattern | Suite(s) |
+|---|---|
+| `apps/manager/src/app/*/feature-flags/*` | AF-FLAG |
+| `apps/manager/src/app/*/users/*` | AF-USER |
+| `apps/manager/src/app/*/brands/*` | AF-BRAND |
+| `apps/manager/src/app/*/categories/*` | AF-CATTAG |
+| `apps/manager/*` | AF-FLAG, AF-USER, AF-BRAND (catch-all) |
+
+## Dashboard
+
+| Path Pattern | Suite(s) |
+|---|---|
+| `apps/dashboard/src/app/*/campaigns/*` | AF-CAMPAIGN |
+| `apps/dashboard/src/app/*/polsts/*` | AF-POLST |
+| `apps/dashboard/src/app/*/settings/*` | AF-BRAND |
+| `apps/dashboard/src/components/layout/*` | AF-NAV |
+| `apps/dashboard/*` | AF-CAMPAIGN, AF-BRAND, AF-METRICS (catch-all) |
+
+## Shared
+
+| Path Pattern | Suite(s) |
+|---|---|
+| `packages/web/*` | AF-CROSS, AF-AUTH |
+| `packages/trpc/*` | All suites (type contract change) |
+
+## Prerequisite Chains
+
+When a suite is selected, always include its prerequisites:
+
+| Suite | Prerequisites |
+|---|---|
+| AF-POLST | AF-AUTH |
+| AF-VOTE | AF-AUTH, AF-POLST |
+| AF-SOCIAL | AF-AUTH, AF-POLST |
+| AF-CAMPAIGN | AF-AUTH (dashboard) |
+| AF-BRAND | AF-AUTH (manager + frontend) |
+| AF-USER | AF-AUTH (manager) |
+| AF-FLAG | AF-AUTH (manager) |
+| AF-STUDIO | AF-AUTH |
+| AF-NOTIF | AF-AUTH, AF-POLST |
+| AF-CROSS | AF-AUTH (all apps) |
+| AF-SEARCH | AF-AUTH, AF-POLST |
+| AF-ANOMALY | AF-AUTH (manager), AF-POLST |

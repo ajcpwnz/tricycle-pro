@@ -1,0 +1,35 @@
+# Minimal single-app project
+
+project:
+  name: "my-app"
+  type: "single-app"
+  package_manager: "npm"
+  base_branch: "main"
+
+apps:
+  - name: app
+    path: "."
+    type: web
+    lint: "npm run lint"
+    build: "npm run build"
+
+worktree:
+  enabled: false
+
+mcp:
+  preset: "minimal"
+
+qa:
+  enabled: false
+
+push:
+  require_approval: true
+  require_lint: true
+  require_tests: false
+  pr_target: "main"
+  auto_merge: false
+  merge_strategy: "squash"
+
+constitution:
+  root: ".specify/memory/constitution.md"
+  per_app: false

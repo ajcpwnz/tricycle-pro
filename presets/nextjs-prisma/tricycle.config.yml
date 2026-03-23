@@ -1,0 +1,55 @@
+# Single Next.js app with Prisma + PostgreSQL
+
+project:
+  name: "my-nextjs-app"
+  type: "single-app"
+  package_manager: "npm"
+  base_branch: "main"
+
+apps:
+  - name: app
+    path: "."
+    type: web
+    lint: "npm run lint"
+    test: "npm run test"
+    build: "npm run build"
+    dev: "npm run dev"
+    port: 3000
+    database:
+      type: postgres
+      container: postgres
+      port: 5432
+      user: postgres
+      default_db: mydb
+    migration:
+      tool: prisma
+      script: ./scripts/migrate-dev.sh
+
+worktree:
+  enabled: true
+  path_pattern: "../{project}-{branch}"
+  db_isolation: true
+  env_copy:
+    - .env
+
+mcp:
+  preset: "web-fullstack"
+  custom:
+    prisma:
+      command: "npx"
+      args: ["prisma", "mcp"]
+
+qa:
+  enabled: false
+
+push:
+  require_approval: true
+  require_lint: true
+  require_tests: true
+  pr_target: "main"
+  auto_merge: false
+  merge_strategy: "squash"
+
+constitution:
+  root: ".specify/memory/constitution.md"
+  per_app: false

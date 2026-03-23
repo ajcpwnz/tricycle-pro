@@ -1,0 +1,79 @@
+# Monorepo preset — Turborepo + Bun workspaces
+# Mirrors the polst project's setup: multiple Next.js frontends + Express backend
+
+project:
+  name: "my-monorepo"
+  type: "monorepo"
+  package_manager: "bun"
+  base_branch: "staging"
+
+apps:
+  - name: backend
+    path: apps/backend
+    type: api
+    lint: "bun run lint"
+    test: "bun run test"
+    build: "bun run build"
+    docker:
+      compose: docker-compose.yml
+      container: backend-app-1
+    database:
+      type: postgres
+      container: backend-postgres-1
+      port: 5433
+      user: myuser
+      default_db: mydb
+    migration:
+      tool: prisma
+      script: ./scripts/migrate-dev.sh
+  - name: frontend
+    path: apps/frontend
+    type: web
+    lint: "bun run lint"
+    build: "bun run build"
+    dev: "bun run dev"
+    port: 3000
+
+worktree:
+  enabled: true
+  path_pattern: "../{project}-{branch}"
+  db_isolation: true
+  env_copy:
+    - apps/backend/.env
+    - apps/frontend/.env
+  setup_script: apps/backend/scripts/worktree-db-setup.sh
+
+mcp:
+  preset: "web-fullstack"
+  custom:
+    prisma:
+      command: "npx"
+      args: ["prisma", "mcp"]
+
+qa:
+  enabled: true
+  primary_tool: "chrome-devtools"
+  fallback_tool: "playwright"
+  results_dir: "qa/results-{date}"
+  issue_tracker: "github"
+
+push:
+  require_approval: true
+  require_lint: true
+  require_tests: true
+  pr_target: "staging"
+  auto_merge: true
+  merge_strategy: "squash"
+
+deploy:
+  enabled: true
+  workflows:
+    - name: "Deploy Backend"
+      paths: ["apps/backend/**", "bun.lock"]
+    - name: "Deploy Frontend"
+      paths: ["apps/frontend/**", "packages/**", "bun.lock"]
+
+constitution:
+  root: ".specify/memory/constitution.md"
+  per_app: true
+  hierarchy: "app-overrides-root"

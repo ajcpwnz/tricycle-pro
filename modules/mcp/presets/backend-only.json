@@ -1,0 +1,17 @@
+{
+  "context7": {
+    "command": "npx",
+    "args": ["-y", "@upstash/context7-mcp"]
+  },
+  "docker": {
+    "command": "npx",
+    "args": ["@modelcontextprotocol/server-docker"]
+  },
+  "github": {
+    "command": "npx",
+    "args": ["@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+    }
+  }
+}
