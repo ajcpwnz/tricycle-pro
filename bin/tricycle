@@ -19,6 +19,7 @@ source "$SCRIPT_DIR/lib/yaml_parser.sh"
 source "$SCRIPT_DIR/lib/json_builder.sh"
 source "$SCRIPT_DIR/lib/helpers.sh"
 source "$SCRIPT_DIR/lib/template_engine.sh"
+source "$SCRIPT_DIR/lib/assemble.sh"
 
 detect_sha256
 
@@ -69,6 +70,7 @@ Usage:
   tricycle generate <target>          Generate files (claude-md, settings, mcp)
   tricycle update [--dry-run]         Update core files to latest version
   tricycle update-self                Update the tricycle CLI itself
+  tricycle assemble [--dry-run]        Assemble commands from blocks based on workflow config
   tricycle validate                   Validate configuration and installed files
 
 Options:
@@ -186,6 +188,7 @@ YAML
   install_dir "$TOOLKIT_ROOT/core/scripts/bash" ".specify/scripts/bash"
   install_dir "$TOOLKIT_ROOT/core/hooks" ".claude/hooks"
   install_dir "$TOOLKIT_ROOT/core/skills" ".claude/skills"
+  install_dir "$TOOLKIT_ROOT/core/blocks" ".specify/blocks"
 
   # Constitution placeholder
   local const_path="$CWD/.specify/memory/constitution.md"
@@ -564,7 +567,8 @@ cmd_update() {
     "core/commands:.claude/commands" \
     "core/templates:.specify/templates" \
     "core/scripts/bash:.specify/scripts/bash" \
-    "core/hooks:.claude/hooks"; do
+    "core/hooks:.claude/hooks" \
+    "core/blocks:.specify/blocks"; do
 
     src_rel="${mapping%%:*}"
     dest_rel="${mapping#*:}"
@@ -751,6 +755,7 @@ fi
 case "$COMMAND" in
   init)        cmd_init ;;
   add)         cmd_add ;;
+  assemble)    cmd_assemble ;;
   generate)    cmd_generate ;;
   update)      cmd_update ;;
   update-self) cmd_update_self ;;

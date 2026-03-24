@@ -176,6 +176,208 @@ json_escape() {
     printf '%s' "$s"
 }
 
+# ─── Block Frontmatter Parsing ────────────────────────────────────────────
+
+# Parse YAML frontmatter from a block file.
+# Reads between the opening and closing --- markers.
+# Outputs KEY=VALUE pairs (name, step, description, required, default_enabled, order).
+parse_block_frontmatter() {
+    local file="$1"
+    local in_frontmatter=0
+    local passed_first_marker=0
+
+    while IFS= read -r line; do
+        if [[ "$line" == "---" ]]; then
+            if [[ $passed_first_marker -eq 0 ]]; then
+                passed_first_marker=1
+                in_frontmatter=1
+                continue
+            else
+                break
+            fi
+        fi
+        if [[ $in_frontmatter -eq 1 ]]; then
+            # Parse key: value (simple flat YAML)
+            local key value
+            key=$(printf '%s' "$line" | sed -n 's/^\([a-z_]*\):.*/\1/p')
+            value=$(printf '%s' "$line" | sed -n 's/^[a-z_]*:[[:space:]]*//p' | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/")
+            if [[ -n "$key" ]]; then
+                printf '%s=%s\n' "$key" "$value"
+            fi
+        fi
+    done < "$file"
+}
+
+# List all .md block files in a step's block directory, sorted by name.
+list_blocks_for_step() {
+    local blocks_dir="$1"
+    local step="$2"
+    local step_dir="$blocks_dir/$step"
+
+    if [[ -d "$step_dir" ]]; then
+        find "$step_dir" -maxdepth 1 -name '*.md' -type f | sort
+    fi
+}
+
+# Extract body content from a block file (everything below the closing --- frontmatter marker).
+read_block_content() {
+    local file="$1"
+    local passed_markers=0
+
+    while IFS= read -r line; do
+        if [[ "$line" == "---" ]]; then
+            passed_markers=$((passed_markers + 1))
+            if [[ $passed_markers -eq 2 ]]; then
+                # Read remaining content
+                cat
+                break
+            fi
+            continue
+        fi
+    done < "$file"
+}
+
+# Get a specific frontmatter field value from a block file.
+get_block_field() {
+    local file="$1"
+    local field="$2"
+    parse_block_frontmatter "$file" | grep "^${field}=" | head -1 | cut -d= -f2-
+}
+
+# ─── Workflow Chain Config Parsing ────────────────────────────────────────
+
+# Parse workflow.chain from tricycle.config.yml.
+# Returns space-separated step names (e.g., "specify plan tasks implement").
+# Defaults to full chain if not configured.
+parse_chain_config() {
+    local config_file="$1"
+
+    if [[ ! -f "$config_file" ]]; then
+        echo "specify plan tasks implement"
+        return 0
+    fi
+
+    # Look for workflow.chain as a YAML list
+    local in_workflow=0
+    local in_chain=0
+    local chain_items=""
+
+    while IFS= read -r line; do
+        # Detect workflow: section
+        if [[ "$line" =~ ^workflow: ]]; then
+            in_workflow=1
+            continue
+        fi
+        # Exit workflow section on next top-level key
+        if [[ $in_workflow -eq 1 ]] && [[ "$line" =~ ^[a-z] ]] && [[ ! "$line" =~ ^[[:space:]] ]]; then
+            in_workflow=0
+            in_chain=0
+        fi
+        # Detect chain: within workflow
+        if [[ $in_workflow -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+chain: ]]; then
+            # Check for inline list: chain: [specify, plan, implement]
+            local inline
+            inline=$(printf '%s' "$line" | sed -n 's/.*chain:[[:space:]]*\[//p' | sed 's/\].*//')
+            if [[ -n "$inline" ]]; then
+                printf '%s' "$inline" | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+                echo
+                return 0
+            fi
+            in_chain=1
+            continue
+        fi
+        # Read chain list items (- specify, - plan, etc.)
+        if [[ $in_chain -eq 1 ]]; then
+            if [[ "$line" =~ ^[[:space:]]+- ]]; then
+                local item
+                item=$(printf '%s' "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/[[:space:]]*$//')
+                chain_items="${chain_items}${chain_items:+ }${item}"
+            else
+                # End of chain list
+                in_chain=0
+            fi
+        fi
+    done < "$config_file"
+
+    if [[ -n "$chain_items" ]]; then
+        echo "$chain_items"
+    else
+        echo "specify plan tasks implement"
+    fi
+}
+
+# Parse block overrides for a specific step from tricycle.config.yml.
+# Outputs lines like: disable=block-name, enable=block-name, custom=path
+parse_block_overrides() {
+    local config_file="$1"
+    local step="$2"
+
+    if [[ ! -f "$config_file" ]]; then
+        return 0
+    fi
+
+    local in_workflow=0
+    local in_blocks=0
+    local in_step=0
+    local in_section=""
+    local _bo_item=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^workflow: ]]; then in_workflow=1; continue; fi
+        if [[ $in_workflow -eq 1 ]] && [[ "$line" =~ ^[a-z] ]] && [[ ! "$line" =~ ^[[:space:]] ]]; then
+            in_workflow=0; in_blocks=0; in_step=0
+        fi
+        if [[ $in_workflow -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+blocks: ]]; then in_blocks=1; continue; fi
+        if [[ $in_blocks -eq 1 ]] && [[ "$line" =~ ^[[:space:]]{4}${step}: ]]; then in_step=1; continue; fi
+        if [[ $in_step -eq 1 ]] && [[ "$line" =~ ^[[:space:]]{4}[a-z] ]] && [[ ! "$line" =~ ^[[:space:]]{4}${step}: ]]; then
+            in_step=0
+        fi
+        if [[ $in_step -eq 1 ]]; then
+            if [[ "$line" =~ ^[[:space:]]+(disable|enable|custom): ]]; then
+                in_section=$(printf '%s' "$line" | sed 's/^[[:space:]]*//' | sed 's/:.*//')
+                continue
+            fi
+            if [[ -n "$in_section" ]] && [[ "$line" =~ ^[[:space:]]+- ]]; then
+                _bo_item=$(printf '%s' "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/[[:space:]]*$//')
+                printf '%s=%s\n' "$in_section" "$_bo_item"
+            fi
+        fi
+    done < "$config_file"
+}
+
+# Validate a chain configuration. Returns 0 if valid, 1 with error message if invalid.
+validate_chain() {
+    local chain="$1"  # space-separated step names
+
+    # Convert to array
+    local steps=()
+    read -ra steps <<< "$chain"
+
+    # Must start with specify
+    if [[ "${steps[0]}" != "specify" ]]; then
+        echo "ERROR: Chain must start with 'specify'. Got: ${steps[0]}" >&2
+        return 1
+    fi
+
+    # Must end with implement
+    if [[ "${steps[${#steps[@]}-1]}" != "implement" ]]; then
+        echo "ERROR: Chain must end with 'implement'. Got: ${steps[${#steps[@]}-1]}" >&2
+        return 1
+    fi
+
+    # Check valid variants
+    local chain_str="${steps[*]}"
+    case "$chain_str" in
+        "specify plan tasks implement"|"specify plan implement"|"specify implement")
+            return 0
+            ;;
+        *)
+            echo "ERROR: Invalid chain '${chain_str}'. Valid chains: [specify, plan, tasks, implement], [specify, plan, implement], [specify, implement]" >&2
+            return 1
+            ;;
+    esac
+}
+
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 

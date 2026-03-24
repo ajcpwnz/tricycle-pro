@@ -18,26 +18,21 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
-## Outline
 
 1. **Setup**: Run `.specify/scripts/bash/setup-plan.sh --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC and `.specify/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 
-3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
-   - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
-   - Fill Constitution Check section from constitution
-   - Evaluate gates (ERROR if violations unjustified)
-   - Phase 0: Generate research.md (resolve all NEEDS CLARIFICATION)
-   - Phase 1: Generate data-model.md, contracts/, quickstart.md
-   - Phase 1: Update agent context by running the agent script
-   - Re-evaluate Constitution Check post-design
+## Key rules
 
-4. **Version awareness**: Read the `VERSION` file from the repo root. Note the current version in the plan summary. The implementation phase (`/trc.implement`) will bump this version upon completion — the plan should note whether the feature warrants a minor bump (new feature) or patch bump (fix/improvement).
+- Use absolute paths
+- ERROR on gate failures or unresolved clarifications
 
-5. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
 
-## Phases
+- Fill Constitution Check section from constitution
+- Evaluate gates (ERROR if violations unjustified)
+- Re-evaluate Constitution Check post-design
+
 
 ### Phase 0: Outline & Research
 
@@ -62,6 +57,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 **Output**: research.md with all NEEDS CLARIFICATION resolved
 
+
 ### Phase 1: Design & Contracts
 
 **Prerequisites:** `research.md` complete
@@ -77,6 +73,9 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Examples: public APIs for libraries, command schemas for CLI tools, endpoints for web services, grammars for parsers, UI contracts for applications
    - Skip if project is purely internal (build scripts, one-off tools, etc.)
 
+**Output**: data-model.md, /contracts/*, quickstart.md
+
+
 3. **Agent context update**:
    - Run `.specify/scripts/bash/update-agent-context.sh claude`
    - These scripts detect which AI agent is in use
@@ -84,9 +83,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Add only new technology from current plan
    - Preserve manual additions between markers
 
-**Output**: data-model.md, /contracts/*, quickstart.md, agent-specific file
 
-## Key rules
+4. **Version awareness**: Read the `VERSION` file from the repo root. Note the current version in the plan summary. The implementation phase (`/trc.implement`) will bump this version upon completion — the plan should note whether the feature warrants a minor bump (new feature) or patch bump (fix/improvement).
 
-- Use absolute paths
-- ERROR on gate failures or unresolved clarifications
+5. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+
