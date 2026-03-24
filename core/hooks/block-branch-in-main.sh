@@ -35,7 +35,7 @@ fi
 if [ -d "$REPO_ROOT/.git" ]; then
   # Main checkout — block branch creation
   cat <<EOJSON
-{"decision":"block","reason":"BLOCKED: Do not create feature branches in the main checkout. You MUST use a git worktree instead (CLAUDE.md 'Feature Worktree Workflow' — NONNEGOTIABLE). Run: git worktree add -b <branch-name> ../polst-<branch-name> origin/staging — then cd into it and run bun install + worktree-db-setup.sh. Only skip if the user explicitly said to work on the current branch."}
+{"decision":"block","reason":"BLOCKED: Do not create feature branches in the main checkout. You MUST use a git worktree instead (CLAUDE.md 'Feature Worktree Workflow' — NONNEGOTIABLE). Run: git worktree add -b <branch-name> ../<project>-<branch-name> origin/<base-branch> — then cd into it and install dependencies. Only skip if the user explicitly said to work on the current branch."}
 EOJSON
   exit 0
 fi

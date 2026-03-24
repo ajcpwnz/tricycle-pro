@@ -33,7 +33,7 @@ fi
 if [ -d "$REPO_ROOT/.git" ]; then
   # .git is a directory = main checkout, BLOCK
   cat <<EOJSON
-{"decision":"block","reason":"BLOCKED: You are writing spec files in the main checkout. You MUST create a git worktree first (see CLAUDE.md 'Feature Worktree Workflow'). Run: git worktree add -b <branch> ../polst-<branch> and cd into it before writing specs."}
+{"decision":"block","reason":"BLOCKED: You are writing spec files in the main checkout. You MUST create a git worktree first (see CLAUDE.md 'Feature Worktree Workflow'). Run: git worktree add -b <branch> ../<project>-<branch> and cd into it before writing specs."}
 EOJSON
   exit 0
 fi
