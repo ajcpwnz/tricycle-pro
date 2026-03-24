@@ -256,6 +256,29 @@ apply_overrides() {
         fi
     done
 
+    # Add companion-enabled blocks
+    if [[ -n "$COMPANION_ENABLES" ]]; then
+        for comp in $COMPANION_ENABLES; do
+            local comp_step="${comp%%:*}"
+            local comp_block="${comp#*:}"
+            if [[ "$comp_step" == "$step" ]]; then
+                # Check if already present
+                local already=0
+                for en in "${enabled[@]}"; do
+                    [[ "$en" == "$comp_block" ]] && already=1 && break
+                done
+                if [[ $already -eq 0 ]]; then
+                    local opt_file="$blocks_dir/optional/$step/$comp_block.md"
+                    if [[ -f "$opt_file" ]]; then
+                        local order
+                        order=$(get_block_field "$opt_file" "order")
+                        printf '%s|%s|%s|companion\n' "$order" "$opt_file" "$comp_block"
+                    fi
+                fi
+            fi
+        done
+    fi
+
     # Add custom blocks
     for custom_path in "${customs[@]}"; do
         local full_path="$custom_path"
@@ -297,6 +320,7 @@ assemble_step() {
             local marker="✓"
             [[ "$source" == absorbed:* ]] && marker="+"
             [[ "$source" == "enabled" ]] && marker="⊕"
+            [[ "$source" == "companion" ]] && marker="⊕"
             [[ "$source" == "custom" ]] && marker="◆"
             local req=""
             local is_req
@@ -628,6 +652,74 @@ FOOTER
     } > "$output_file"
 }
 
+# ─── Companion resolution ─────────────────────────────────────────────────
+
+# COMPANION_ENABLES is a global associative-style list: "step:block step:block ..."
+COMPANION_ENABLES=""
+
+# Scan all enabled blocks across all steps for companion declarations.
+# Populates COMPANION_ENABLES with "step:block" entries to auto-enable.
+resolve_companions() {
+    local chain="$1"
+    local config_file="$2"
+    local blocks_dir="$3"
+
+    local chain_steps=()
+    read -ra chain_steps <<< "$chain"
+
+    for step in "${chain_steps[@]}"; do
+        # Collect blocks that will be enabled for this step
+        local enabled_blocks
+        enabled_blocks=$(collect_blocks_for_step "$step" "$chain" "$config_file" "$blocks_dir" | \
+            apply_overrides "$step" "$config_file" "$blocks_dir")
+
+        # Also check explicitly enabled optional blocks
+        local overrides
+        overrides=$(parse_block_overrides "$config_file" "$step")
+        local enable_list=""
+        enable_list=$(echo "$overrides" | grep '^enable=' | cut -d= -f2-)
+
+        # For each enabled block (own + explicitly enabled), check companions field
+        local all_files=""
+        all_files=$(echo "$enabled_blocks" | cut -d'|' -f2)
+        while IFS= read -r en_name; do
+            [[ -z "$en_name" ]] && continue
+            local opt_file="$blocks_dir/optional/$step/$en_name.md"
+            [[ -f "$opt_file" ]] && all_files="$all_files"$'\n'"$opt_file"
+        done <<< "$enable_list"
+
+        while IFS= read -r block_file; do
+            [[ -z "$block_file" ]] && continue
+            [[ ! -f "$block_file" ]] && continue
+            local companions
+            companions=$(get_block_field "$block_file" "companions")
+            if [[ -n "$companions" ]]; then
+                # companions format: "step:block" or "step:block step:block"
+                for comp in $companions; do
+                    # Deduplicate
+                    case " $COMPANION_ENABLES " in
+                        *" $comp "*) ;;  # already present
+                        *) COMPANION_ENABLES="$COMPANION_ENABLES $comp" ;;
+                    esac
+                done
+            fi
+        done <<< "$all_files"
+    done
+}
+
+# Check if a block should be auto-enabled via companion resolution.
+# Returns 0 (true) if the block should be enabled, 1 otherwise.
+is_companion_enabled() {
+    local step="$1"
+    local block_name="$2"
+    local target="${step}:${block_name}"
+
+    for comp in $COMPANION_ENABLES; do
+        [[ "$comp" == "$target" ]] && return 0
+    done
+    return 1
+}
+
 # ─── Main ─────────────────────────────────────────────────────────────────
 
 main() {
@@ -646,6 +738,9 @@ main() {
     if [[ $DRY_RUN -eq 1 ]]; then
         echo "Chain: [$(echo "$chain" | tr ' ' ', ')]"
     fi
+
+    # Resolve companion blocks (must happen before assembly)
+    resolve_companions "$chain" "$CONFIG_FILE" "$BLOCKS_DIR"
 
     # Assemble each step in the chain
     for step in "${chain_steps[@]}"; do
