@@ -71,6 +71,8 @@ until the user has approved the push and the PR is merged. Cleanup sequence:
 ## Active Technologies
 - JavaScript (Node.js >= 18.0.0) + yaml (existing), node:test (existing) (001-headless-mode)
 - N/A (file-based artifacts only) (001-headless-mode)
+- Bash 3.2+ (macOS default), 4.0+ (Linux) + None — standard Unix utilities only (`sed`, `awk`, `grep`, `find`, `chmod`, `mkdir`, `cat`, `shasum`/`sha256sum`) (002-shell-only-cli)
+- File-based (YAML config input, JSON output, template files) (002-shell-only-cli)
 
 ## Recent Changes
 - 001-headless-mode: Added JavaScript (Node.js >= 18.0.0) + yaml (existing), node:test (existing)

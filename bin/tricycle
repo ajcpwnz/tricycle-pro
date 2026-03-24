@@ -1,0 +1,701 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─── Resolve toolkit root (handles symlinks) ────────────────────────────────
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_PATH" ]; do
+  SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+  SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+  [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$SCRIPT_DIR/$SCRIPT_PATH"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+TOOLKIT_ROOT="$(cd -P "$SCRIPT_DIR/.." && pwd)"
+CWD="$(pwd)"
+
+# ─── Source libraries ────────────────────────────────────────────────────────
+
+source "$SCRIPT_DIR/lib/yaml_parser.sh"
+source "$SCRIPT_DIR/lib/json_builder.sh"
+source "$SCRIPT_DIR/lib/helpers.sh"
+source "$SCRIPT_DIR/lib/template_engine.sh"
+
+detect_sha256
+
+# ─── Argument parsing ────────────────────────────────────────────────────────
+
+PRESET=""
+DRY_RUN=0
+HELP=0
+POSITIONALS=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --preset)
+      PRESET="${2:-}"
+      shift 2
+      ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) HELP=1; shift ;;
+    -*) error "Unknown option: $1"; exit 1 ;;
+    *) POSITIONALS+=("$1"); shift ;;
+  esac
+done
+
+COMMAND="${POSITIONALS[0]:-}"
+
+# ─── Help ────────────────────────────────────────────────────────────────────
+
+show_help() {
+  cat << 'EOF'
+
+Tricycle Pro — AI-driven, spec-first development workflow toolkit
+
+Usage:
+  tricycle init [--preset <name>]     Initialize project with Tricycle Pro
+  tricycle add <module>               Add optional module (worktree, qa, ci-watch, mcp, memory)
+  tricycle generate <target>          Generate files (claude-md, settings, mcp)
+  tricycle update [--dry-run]         Update core files to latest version
+  tricycle validate                   Validate configuration and installed files
+
+Options:
+  --preset <name>     Use a preset configuration (monorepo-turborepo, nextjs-prisma, single-app)
+  --dry-run           Show what would change without making changes
+  -h, --help          Show this help message
+
+EOF
+}
+
+# ─── Commands ────────────────────────────────────────────────────────────────
+
+cmd_init() {
+  echo ""
+  echo "tricycle init — AI-driven spec-first development workflow"
+  echo ""
+
+  if [ -n "$PRESET" ]; then
+    # Preset mode
+    local preset_path="$TOOLKIT_ROOT/presets/$PRESET/tricycle.config.yml"
+    if [ ! -f "$preset_path" ]; then
+      error "preset \"$PRESET\" not found."
+      local available
+      available=$(find "$TOOLKIT_ROOT/presets" -name "tricycle.config.yml" -exec dirname {} \; | xargs -I{} basename {} | sort | tr '\n' ', ' | sed 's/,$//')
+      echo "Available: $available" >&2
+      exit 1
+    fi
+
+    echo "Using preset: $PRESET"
+
+    # Parse preset to get default project name
+    local preset_data
+    preset_data=$(parse_yaml "$preset_path")
+    local default_name
+    default_name=$(echo "$preset_data" | grep -m1 "^project\.name=" | cut -d= -f2-)
+    local project_name
+    project_name=$(prompt "Project name" "${default_name:-my-project}")
+
+    # Copy preset file, replacing project name
+    awk -v name="$project_name" '
+      /^project:/ { in_project = 1; print; next }
+      in_project && /^  name:/ {
+        printf "  name: \"%s\"\n", name
+        in_project = 0
+        next
+      }
+      /^[^ ]/ && !/^project:/ { in_project = 0 }
+      { print }
+    ' "$preset_path" > "$CWD/tricycle.config.yml"
+    echo ""
+    info "WRITE tricycle.config.yml"
+
+    # Load the written config for settings generation
+    CONFIG_DATA=$(parse_yaml "$CWD/tricycle.config.yml")
+  else
+    # Interactive wizard
+    local name type pm base_branch
+    name=$(prompt "Project name" "my-project")
+    local type_idx
+    type_idx=$(choose "Project type:" 0 "monorepo" "single-app")
+    local types=("monorepo" "single-app")
+    type="${types[$type_idx]}"
+    local pm_idx
+    pm_idx=$(choose "Package manager:" 0 "bun" "npm" "yarn" "pnpm")
+    local pms=("bun" "npm" "yarn" "pnpm")
+    pm="${pms[$pm_idx]}"
+    base_branch=$(prompt "Base branch (PR target)" "staging")
+
+    local per_app="false"
+    [ "$type" = "monorepo" ] && per_app="true"
+
+    cat > "$CWD/tricycle.config.yml" << YAML
+project:
+  name: $name
+  type: $type
+  package_manager: $pm
+  base_branch: $base_branch
+apps: []
+worktree:
+  enabled: true
+  path_pattern: "../{project}-{branch}"
+  db_isolation: false
+  env_copy: []
+mcp:
+  preset: minimal
+qa:
+  enabled: false
+push:
+  require_approval: true
+  require_lint: true
+  require_tests: true
+  pr_target: $base_branch
+  auto_merge: true
+  merge_strategy: squash
+constitution:
+  root: .specify/memory/constitution.md
+  per_app: $per_app
+  hierarchy: app-overrides-root
+YAML
+    echo ""
+    info "WRITE tricycle.config.yml"
+
+    CONFIG_DATA=$(parse_yaml "$CWD/tricycle.config.yml")
+  fi
+
+  # Install core files
+  LOCK_VERSION="0.1.0"
+  LOCK_INSTALLED="$(date +%Y-%m-%d)"
+  LOCK_FILES=""
+  echo ""
+  echo "Installing core..."
+  install_dir "$TOOLKIT_ROOT/core/commands" ".claude/commands"
+  install_dir "$TOOLKIT_ROOT/core/templates" ".specify/templates"
+  install_dir "$TOOLKIT_ROOT/core/scripts/bash" ".specify/scripts/bash"
+  install_dir "$TOOLKIT_ROOT/core/hooks" ".claude/hooks"
+  install_dir "$TOOLKIT_ROOT/core/skills" ".claude/skills"
+
+  # Constitution placeholder
+  local const_path="$CWD/.specify/memory/constitution.md"
+  if [ ! -f "$const_path" ]; then
+    mkdir -p "$(dirname "$const_path")"
+    printf '# Project Constitution\n\n_Run `/trc.constitution` to populate this file._\n' > "$const_path"
+    info "WRITE .specify/memory/constitution.md (placeholder)"
+  fi
+
+  # Generate settings and gitignore
+  cmd_generate_settings
+  cmd_generate_gitignore
+
+  save_lock
+
+  echo ""
+  echo "Tricycle Pro initialized. Next steps:"
+  echo "   1. Edit tricycle.config.yml to add your apps"
+  echo "   2. Run \`tricycle generate claude-md\` to generate CLAUDE.md"
+  echo "   3. Run \`/trc.constitution\` in Claude Code to define project principles"
+  echo "   4. Run \`tricycle add <module>\` to enable worktree, qa, ci-watch, mcp, or memory"
+  echo ""
+}
+
+cmd_add() {
+  local module="${POSITIONALS[1]:-}"
+  if [ -z "$module" ]; then
+    echo "Usage: tricycle add <module>" >&2
+    echo "Modules: worktree, qa, ci-watch, mcp, memory" >&2
+    exit 1
+  fi
+
+  local module_path="$TOOLKIT_ROOT/modules/$module"
+  if [ ! -d "$module_path" ]; then
+    error "module \"$module\" not found."
+    exit 1
+  fi
+
+  load_lock
+  echo ""
+  echo "Installing module: $module"
+
+  # Install module files by category
+  local pair sub dest
+  for pair in \
+    "commands:.claude/commands" \
+    "skills:.claude/skills" \
+    "hooks:.claude/hooks" \
+    "scripts:scripts" \
+    "templates:.specify/templates" \
+    "adapters:scripts/adapters" \
+    "seeds:.claude/memory/seeds"; do
+    sub="${pair%%:*}"
+    dest="${pair#*:}"
+    if [ -d "$module_path/$sub" ]; then
+      install_dir "$module_path/$sub" "$dest"
+    fi
+  done
+
+  # Module README info
+  if [ -f "$module_path/README.md" ]; then
+    info "INFO See $module docs: modules/$module/README.md"
+  fi
+
+  # Module-specific post-install
+  if [ "$module" = "qa" ]; then
+    local qa_dir="$CWD/qa"
+    if [ ! -d "$qa_dir" ]; then
+      mkdir -p "$qa_dir"
+      info "CREATE qa/ directory"
+    fi
+    if [ -d "$module_path/templates" ]; then
+      local f
+      for f in "$module_path/templates"/*; do
+        [ -f "$f" ] || continue
+        local dest_name
+        dest_name=$(basename "$f" | sed 's/\.tpl$//')
+        if [ ! -f "$qa_dir/$dest_name" ]; then
+          cp "$f" "$qa_dir/$dest_name"
+          info "WRITE qa/$dest_name"
+        fi
+      done
+    fi
+  fi
+
+  if [ "$module" = "worktree" ] && [ -d "$module_path/scripts" ]; then
+    install_dir "$module_path/scripts" "scripts"
+  fi
+
+  save_lock
+  echo ""
+  echo "Module \"$module\" installed."
+  echo ""
+}
+
+cmd_generate() {
+  local target="${POSITIONALS[1]:-}"
+  load_config
+
+  case "$target" in
+    claude-md) cmd_generate_claude_md ;;
+    settings) cmd_generate_settings ;;
+    mcp) cmd_generate_mcp ;;
+    *)
+      echo "Usage: tricycle generate <claude-md|settings|mcp>" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_generate_claude_md() {
+  local sections_dir="$TOOLKIT_ROOT/generators/sections"
+  local sections=""
+
+  # Always include commands
+  sections=$(render_section "$sections_dir/commands.md.tpl")
+
+  # Conditionally include sections
+  if echo "$CONFIG_DATA" | grep -q "^apps\.[0-9]*\.docker\."; then
+    sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/docker.md.tpl")"
+  fi
+
+  local req_lint req_tests
+  req_lint=$(cfg_get "push.require_lint")
+  req_tests=$(cfg_get "push.require_tests")
+  if [ "$req_lint" = "true" ] || [ "$req_tests" = "true" ]; then
+    sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/lint-test.md.tpl")"
+  fi
+
+  if [ "$(cfg_get "push.require_approval")" = "true" ]; then
+    sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/push-gating.md.tpl")"
+  fi
+
+  if [ "$(cfg_get "worktree.enabled")" = "true" ]; then
+    sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/worktree-workflow.md.tpl")"
+  fi
+
+  if [ "$(cfg_get "qa.enabled")" = "true" ]; then
+    sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/qa-testing.md.tpl")"
+  fi
+
+  if cfg_has "mcp."; then
+    sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/mcp-usage.md.tpl")"
+  fi
+
+  sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/feature-branch-pr.md.tpl")"
+  sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/artifact-cleanup.md.tpl")"
+
+  local project_name
+  project_name=$(cfg_get_or "project.name" "my-project")
+  printf '# %s\n\n%s\n' "$project_name" "$sections" > "$CWD/CLAUDE.md"
+  info "WRITE CLAUDE.md"
+}
+
+render_section() {
+  local tpl_path="$1"
+  [ -f "$tpl_path" ] || return 0
+  render_template "$tpl_path"
+}
+
+cmd_generate_settings() {
+  local perms=()
+  perms+=("Edit" "Write")
+  perms+=("Bash(git:*)" "Bash(cd:*)" "Bash(ls:*)" "Bash(cp:*)" "Bash(mkdir:*)")
+
+  local pm
+  pm=$(cfg_get_or "project.package_manager" "npm")
+  perms+=("Bash(${pm}:*)")
+  [ "$pm" = "bun" ] && perms+=("Bash(bunx:*)")
+  perms+=("Bash(npx:*)")
+  perms+=("Bash(node:*)")
+
+  if echo "$CONFIG_DATA" | grep -q "^apps\.[0-9]*\.docker\."; then
+    perms+=("Bash(docker:*)" "Bash(docker compose:*)")
+  fi
+
+  perms+=("Bash(./scripts:*)")
+
+  if [ "$(cfg_get "project.type")" = "monorepo" ]; then
+    perms+=("Bash(turbo:*)")
+  fi
+
+  # Build permissions JSON array
+  local perms_json
+  perms_json=$(json_str_array "${perms[@]}")
+
+  # Build hooks JSON
+  local pre_hooks="" post_hooks=""
+
+  # block-spec-in-main (always)
+  pre_hooks='
+      {
+        "matcher": "Write|Edit",
+        "hooks": [{"type": "command", "command": ".claude/hooks/block-spec-in-main.sh", "timeout": 5}]
+      }'
+
+  # block-branch-in-main (if worktree enabled)
+  if [ "$(cfg_get "worktree.enabled")" = "true" ]; then
+    pre_hooks="${pre_hooks},"$'\n'"      "'
+      {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": ".claude/hooks/block-branch-in-main.sh", "timeout": 5}]
+      }'
+  fi
+
+  # post-implement-lint (always)
+  post_hooks='
+      {
+        "matcher": "Skill",
+        "hooks": [{"type": "command", "command": ".claude/hooks/post-implement-lint.sh", "timeout": 5}]
+      }'
+
+  local settings_json
+  settings_json=$(cat << ENDJSON
+{
+  "permissions": {
+    "allow": ${perms_json}
+  },
+  "hooks": {
+    "PreToolUse": [${pre_hooks}
+    ],
+    "PostToolUse": [${post_hooks}
+    ]
+  }
+}
+ENDJSON
+)
+
+  mkdir -p "$CWD/.claude"
+  printf '%s\n' "$settings_json" > "$CWD/.claude/settings.json"
+  info "WRITE .claude/settings.json"
+}
+
+cmd_generate_gitignore() {
+  local gitignore_path="$CWD/.gitignore"
+  local block
+  block=$(cat << 'BLOCK'
+
+# Claude Code — keep settings.json, commands, hooks, skills committed
+.claude/*
+!.claude/settings.json
+!.claude/commands/
+!.claude/hooks/
+!.claude/skills/
+
+# Tricycle Pro lock
+.tricycle.lock
+BLOCK
+)
+
+  if [ -f "$gitignore_path" ]; then
+    if ! grep -q '\.claude/\*' "$gitignore_path"; then
+      printf '%s\n' "$block" >> "$gitignore_path"
+      info "UPDATE .gitignore (appended .claude rules)"
+    fi
+  else
+    printf '%s\n' "$block" > "$gitignore_path"
+    info "WRITE .gitignore"
+  fi
+}
+
+cmd_generate_mcp() {
+  local mcp_preset
+  mcp_preset=$(cfg_get "mcp.preset")
+  local preset_content="{}"
+
+  if [ -n "$mcp_preset" ]; then
+    local preset_path="$TOOLKIT_ROOT/modules/mcp/presets/${mcp_preset}.json"
+    if [ -f "$preset_path" ]; then
+      preset_content=$(cat "$preset_path")
+    fi
+  fi
+
+  # Check for custom servers
+  local custom_names=""
+  custom_names=$(echo "$CONFIG_DATA" | grep "^mcp\.custom\." | sed 's/^mcp\.custom\.\([^.]*\)\..*/\1/' | sort -u)
+
+  if [ -z "$custom_names" ]; then
+    # No custom servers — wrap preset content
+    printf '{\n  "mcpServers": %s\n}\n' "$preset_content" > "$CWD/.mcp.json"
+  else
+    # Merge preset + custom servers
+    # Strip outer braces from preset, get inner entries
+    local preset_inner
+    preset_inner=$(echo "$preset_content" | sed '1d;$d' | sed 's/^  //')
+
+    {
+      printf '{\n  "mcpServers": {\n'
+
+      # Include preset entries (re-indent)
+      if [ -n "$preset_inner" ] && [ "$preset_inner" != "{}" ]; then
+        echo "$preset_inner" | sed 's/^/    /'
+        printf ','
+      fi
+
+      # Add custom servers
+      local first_custom=1
+      local name
+      for name in $custom_names; do
+        [ $first_custom -eq 0 ] && printf ','
+        printf '\n    "%s": {\n' "$name"
+
+        local stype
+        stype=$(cfg_get "mcp.custom.$name.type")
+        if [ "$stype" = "http" ]; then
+          local url
+          url=$(cfg_get "mcp.custom.$name.url")
+          printf '      "type": "http",\n'
+          printf '      "url": "%s"\n' "$url"
+        else
+          local cmd
+          cmd=$(cfg_get_or "mcp.custom.$name.command" "npx")
+          printf '      "command": "%s"' "$cmd"
+
+          # Args
+          local arg_count i
+          arg_count=$(cfg_count "mcp.custom.$name.args")
+          if [ "$arg_count" -gt 0 ]; then
+            printf ',\n      "args": ['
+            i=0
+            while [ "$i" -lt "$arg_count" ]; do
+              [ "$i" -gt 0 ] && printf ', '
+              printf '"%s"' "$(cfg_get "mcp.custom.$name.args.$i")"
+              i=$((i + 1))
+            done
+            printf ']'
+          fi
+
+          # Env
+          if cfg_has "mcp.custom.$name.env."; then
+            printf ',\n      "env": {'
+            local env_first=1
+            local env_line
+            while IFS= read -r env_line; do
+              local env_key env_val
+              env_key=$(echo "$env_line" | sed "s/^mcp\.custom\.${name}\.env\.\([^=]*\)=.*/\1/")
+              env_val=$(echo "$env_line" | cut -d= -f2-)
+              [ $env_first -eq 0 ] && printf ','
+              printf '\n        "%s": "%s"' "$env_key" "$env_val"
+              env_first=0
+            done < <(echo "$CONFIG_DATA" | grep "^mcp\.custom\.${name}\.env\.")
+            printf '\n      }'
+          fi
+          printf '\n'
+        fi
+
+        printf '    }'
+        first_custom=0
+      done
+
+      printf '\n  }\n}\n'
+    } > "$CWD/.mcp.json"
+  fi
+
+  info "WRITE .mcp.json"
+}
+
+cmd_update() {
+  load_config
+  load_lock
+
+  if [ $DRY_RUN -eq 1 ]; then
+    echo ""
+    echo "[DRY RUN] Showing what would change:"
+    echo ""
+  else
+    echo ""
+    echo "Updating Tricycle Pro files..."
+    echo ""
+  fi
+
+  local updated=0 skipped=0 added=0
+
+  local src_rel dest_rel
+  for mapping in \
+    "core/commands:.claude/commands" \
+    "core/templates:.specify/templates" \
+    "core/scripts/bash:.specify/scripts/bash" \
+    "core/hooks:.claude/hooks"; do
+
+    src_rel="${mapping%%:*}"
+    dest_rel="${mapping#*:}"
+    local src_dir="$TOOLKIT_ROOT/$src_rel"
+    [ -d "$src_dir" ] || continue
+
+    while IFS= read -r src_path; do
+      local entry="${src_path#"$src_dir"/}"
+      local dest_rel_path="$dest_rel/$entry"
+      local dest_path="$CWD/$dest_rel_path"
+      local new_content new_checksum
+      new_content=$(cat "$src_path")
+      new_checksum=$(sha256_str "$new_content")
+
+      if [ ! -f "$dest_path" ]; then
+        if [ $DRY_RUN -eq 1 ]; then
+          info "ADD $dest_rel_path"
+        else
+          install_file "$src_path" "$dest_rel_path"
+        fi
+        added=$((added + 1))
+      elif lock_has "$dest_rel_path"; then
+        local current_checksum stored_checksum
+        current_checksum=$(sha256_str "$(cat "$dest_path")")
+        stored_checksum=$(lock_get_checksum "$dest_rel_path")
+        if [ "$current_checksum" != "$stored_checksum" ]; then
+          info "SKIP $dest_rel_path (locally modified)"
+          skipped=$((skipped + 1))
+        elif [ "$new_checksum" != "$stored_checksum" ]; then
+          if [ $DRY_RUN -eq 1 ]; then
+            info "UPDATE $dest_rel_path"
+          else
+            install_file "$src_path" "$dest_rel_path"
+          fi
+          updated=$((updated + 1))
+        fi
+      fi
+    done < <(find "$src_dir" -type f | sort)
+  done
+
+  [ $DRY_RUN -eq 0 ] && save_lock
+
+  local prefix=""
+  [ $DRY_RUN -eq 1 ] && prefix="Would: "
+  echo ""
+  echo "${prefix}${updated} updated, ${added} added, ${skipped} skipped (locally modified)"
+  echo ""
+}
+
+cmd_validate() {
+  load_config
+  local errors=0
+
+  echo ""
+  echo "Validating Tricycle Pro configuration..."
+  echo ""
+
+  # Required fields
+  if [ -z "$(cfg_get "project.name")" ]; then
+    echo "  ✗ project.name is required" >&2; errors=$((errors + 1))
+  fi
+  if [ -z "$(cfg_get "project.type")" ]; then
+    echo "  ✗ project.type is required" >&2; errors=$((errors + 1))
+  else
+    echo "  ✓ project.type: $(cfg_get "project.type")"
+  fi
+
+  # App paths
+  local app_count i
+  app_count=$(cfg_count "apps")
+  i=0
+  while [ "$i" -lt "$app_count" ]; do
+    local app_name app_path
+    app_name=$(cfg_get "apps.$i.name")
+    app_path=$(cfg_get "apps.$i.path")
+    if [ ! -d "$CWD/$app_path" ]; then
+      echo "  ✗ app \"$app_name\" path not found: $app_path" >&2
+      errors=$((errors + 1))
+    else
+      echo "  ✓ app \"$app_name\": $app_path"
+    fi
+    i=$((i + 1))
+  done
+
+  # Core directories
+  local dir
+  for dir in ".claude/commands" ".specify/templates" ".specify/scripts/bash" ".claude/hooks"; do
+    if [ ! -d "$CWD/$dir" ]; then
+      echo "  ✗ missing: $dir" >&2; errors=$((errors + 1))
+    else
+      echo "  ✓ $dir"
+    fi
+  done
+
+  # Constitution
+  local const_root
+  const_root=$(cfg_get_or "constitution.root" ".specify/memory/constitution.md")
+  if [ ! -f "$CWD/$const_root" ]; then
+    echo "  ✗ constitution not found: $const_root" >&2; errors=$((errors + 1))
+  else
+    echo "  ✓ constitution: $const_root"
+  fi
+
+  # Hook scripts executable
+  local hook_dir="$CWD/.claude/hooks"
+  if [ -d "$hook_dir" ]; then
+    local f
+    for f in "$hook_dir"/*.sh; do
+      [ -f "$f" ] || continue
+      local fname
+      fname=$(basename "$f")
+      if [ -x "$f" ]; then
+        echo "  ✓ executable: .claude/hooks/$fname"
+      else
+        echo "  ✗ not executable: .claude/hooks/$fname" >&2
+        errors=$((errors + 1))
+      fi
+    done
+  fi
+
+  echo ""
+  if [ $errors -eq 0 ]; then
+    echo "All checks passed."
+  else
+    echo "$errors error(s) found." >&2
+  fi
+  echo ""
+  exit "$errors"
+}
+
+# ─── Dispatch ────────────────────────────────────────────────────────────────
+
+if [ -z "$COMMAND" ] || [ $HELP -eq 1 ]; then
+  show_help
+  exit 0
+fi
+
+case "$COMMAND" in
+  init)     cmd_init ;;
+  add)      cmd_add ;;
+  generate) cmd_generate ;;
+  update)   cmd_update ;;
+  validate) cmd_validate ;;
+  *)
+    error "Unknown command: $COMMAND. Run \"tricycle --help\" for usage."
+    exit 1
+    ;;
+esac
