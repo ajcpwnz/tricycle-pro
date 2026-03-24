@@ -2,6 +2,9 @@
 # PreToolUse hook: blocks creating new branches in the main checkout
 # Forces all new feature work to use git worktrees instead
 
+# Dogfood bypass: set TRICYCLE_DEV=1 to allow branch creation in main checkout
+if [ "$TRICYCLE_DEV" = "1" ]; then exit 0; fi
+
 INPUT=$(cat)
 
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')

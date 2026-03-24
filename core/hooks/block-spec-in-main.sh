@@ -2,6 +2,9 @@
 # PreToolUse hook: blocks Write/Edit to specs/*/spec.md in the main checkout
 # Forces all spec work to happen in a git worktree
 
+# Dogfood bypass: set TRICYCLE_DEV=1 to allow spec editing in main checkout
+if [ "$TRICYCLE_DEV" = "1" ]; then exit 0; fi
+
 INPUT=$(cat)
 
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')

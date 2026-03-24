@@ -1,0 +1,27 @@
+project:
+  name: tricycle-pro
+  type: single-app
+  package_manager: npm
+  base_branch: main
+apps:
+  - name: cli
+    path: "."
+    type: cli
+    lint: "npm run lint"
+    test: "node --test tests/"
+worktree:
+  enabled: false
+mcp:
+  preset: minimal
+qa:
+  enabled: false
+push:
+  require_approval: true
+  require_lint: true
+  require_tests: true
+  pr_target: main
+  auto_merge: false
+  merge_strategy: squash
+constitution:
+  root: .specify/memory/constitution.md
+  per_app: false
