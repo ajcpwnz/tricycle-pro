@@ -83,7 +83,7 @@ if [ "${1:-}" = "--install" ]; then
     add_to_path "$HOME/.local/bin"
   fi
 
-  local installed_version="unknown"
+  installed_version="unknown"
   [ -f "$TARGET/VERSION" ] && installed_version=$(cat "$TARGET/VERSION" | tr -d '[:space:]')
 
   echo ""
