@@ -24,9 +24,15 @@ detect_sha256
 
 # ─── Argument parsing ────────────────────────────────────────────────────────
 
+VERSION=""
+if [ -f "$TOOLKIT_ROOT/VERSION" ]; then
+  VERSION=$(cat "$TOOLKIT_ROOT/VERSION" | tr -d '[:space:]')
+fi
+
 PRESET=""
 DRY_RUN=0
 HELP=0
+SHOW_VERSION=0
 POSITIONALS=()
 
 while [ $# -gt 0 ]; do
@@ -37,6 +43,7 @@ while [ $# -gt 0 ]; do
       ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) HELP=1; shift ;;
+    -v|--version) SHOW_VERSION=1; shift ;;
     -*) error "Unknown option: $1"; exit 1 ;;
     *) POSITIONALS+=("$1"); shift ;;
   esac
@@ -44,23 +51,30 @@ done
 
 COMMAND="${POSITIONALS[0]:-}"
 
+if [ $SHOW_VERSION -eq 1 ]; then
+  echo "tricycle-pro ${VERSION:-unknown}"
+  exit 0
+fi
+
 # ─── Help ────────────────────────────────────────────────────────────────────
 
 show_help() {
-  cat << 'EOF'
+  cat << EOF
 
-Tricycle Pro — AI-driven, spec-first development workflow toolkit
+Tricycle Pro ${VERSION:-} — AI-driven, spec-first development workflow toolkit
 
 Usage:
   tricycle init [--preset <name>]     Initialize project with Tricycle Pro
   tricycle add <module>               Add optional module (worktree, qa, ci-watch, mcp, memory)
   tricycle generate <target>          Generate files (claude-md, settings, mcp)
   tricycle update [--dry-run]         Update core files to latest version
+  tricycle update-self                Update the tricycle CLI itself
   tricycle validate                   Validate configuration and installed files
 
 Options:
   --preset <name>     Use a preset configuration (monorepo-turborepo, nextjs-prisma, single-app)
   --dry-run           Show what would change without making changes
+  -v, --version       Show version
   -h, --help          Show this help message
 
 EOF
@@ -681,6 +695,52 @@ cmd_validate() {
   exit "$errors"
 }
 
+cmd_update_self() {
+  local tarball_url="${TRICYCLE_REPO:-https://github.com/ajcpwnz/tricycle-pro/archive/main.tar.gz}"
+
+  command -v curl >/dev/null 2>&1 || { error "curl is required for update-self."; exit 1; }
+
+  echo ""
+  echo "Checking for updates..."
+
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+
+  curl -sL "$tarball_url" | tar xz -C "$tmpdir" --strip-components=1
+
+  local remote_version="unknown"
+  if [ -f "$tmpdir/VERSION" ]; then
+    remote_version=$(cat "$tmpdir/VERSION" | tr -d '[:space:]')
+  fi
+
+  if [ "$remote_version" = "$VERSION" ]; then
+    echo "Already up to date (v${VERSION})."
+    echo ""
+    return 0
+  fi
+
+  echo "Updating: v${VERSION:-unknown} → v${remote_version}"
+
+  # Copy new files over the toolkit root
+  cp -R "$tmpdir/bin/" "$TOOLKIT_ROOT/bin/"
+  cp "$tmpdir/VERSION" "$TOOLKIT_ROOT/VERSION"
+  [ -f "$tmpdir/install.sh" ] && cp "$tmpdir/install.sh" "$TOOLKIT_ROOT/install.sh"
+
+  # Update core dirs (presets, generators, modules, core)
+  for dir in core generators modules presets; do
+    if [ -d "$tmpdir/$dir" ]; then
+      rm -rf "$TOOLKIT_ROOT/$dir"
+      cp -R "$tmpdir/$dir" "$TOOLKIT_ROOT/$dir"
+    fi
+  done
+
+  chmod +x "$TOOLKIT_ROOT/bin/tricycle" "$TOOLKIT_ROOT/bin/lib/"*.sh
+
+  echo "Updated to v${remote_version}."
+  echo ""
+}
+
 # ─── Dispatch ────────────────────────────────────────────────────────────────
 
 if [ -z "$COMMAND" ] || [ $HELP -eq 1 ]; then
@@ -689,11 +749,12 @@ if [ -z "$COMMAND" ] || [ $HELP -eq 1 ]; then
 fi
 
 case "$COMMAND" in
-  init)     cmd_init ;;
-  add)      cmd_add ;;
-  generate) cmd_generate ;;
-  update)   cmd_update ;;
-  validate) cmd_validate ;;
+  init)        cmd_init ;;
+  add)         cmd_add ;;
+  generate)    cmd_generate ;;
+  update)      cmd_update ;;
+  update-self) cmd_update_self ;;
+  validate)    cmd_validate ;;
   *)
     error "Unknown command: $COMMAND. Run \"tricycle --help\" for usage."
     exit 1

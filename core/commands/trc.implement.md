@@ -166,9 +166,15 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Confirm the implementation follows the technical plan
    - Report final status with summary of completed work
 
+10. **Version bump**: After all tasks pass and before reporting completion:
+    - Read the current version from the `VERSION` file in the repo root
+    - Bump the patch version (e.g., `0.2.0` → `0.2.1`; if this is a new feature, bump minor: `0.2.0` → `0.3.0`)
+    - Write the new version to `VERSION`
+    - Include the version bump in the final commit (do NOT create a separate commit for it)
+
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/trc.tasks` first to regenerate the task list.
 
-10. **Check for extension hooks**: After completion validation, check if `.specify/extensions.yml` exists in the project root.
+11. **Check for extension hooks**: After completion validation, check if `.specify/extensions.yml` exists in the project root.
     - If it exists, read it and look for entries under the `hooks.after_implement` key
     - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
     - Filter to only hooks where `enabled: true`

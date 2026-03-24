@@ -83,8 +83,11 @@ if [ "${1:-}" = "--install" ]; then
     add_to_path "$HOME/.local/bin"
   fi
 
+  local installed_version="unknown"
+  [ -f "$TARGET/VERSION" ] && installed_version=$(cat "$TARGET/VERSION" | tr -d '[:space:]')
+
   echo ""
-  echo "Tricycle Pro installed. Run: tricycle --help"
+  echo "Tricycle Pro v${installed_version} installed. Run: tricycle --help"
 else
   # ─── One-off mode ──────────────────────────────────────────────────────
   TMPDIR=$(mktemp -d)

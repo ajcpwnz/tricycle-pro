@@ -33,7 +33,9 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
-4. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+4. **Version awareness**: Read the `VERSION` file from the repo root. Note the current version in the plan summary. The implementation phase (`/trc.implement`) will bump this version upon completion — the plan should note whether the feature warrants a minor bump (new feature) or patch bump (fix/improvement).
+
+5. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
 
 ## Phases
 
