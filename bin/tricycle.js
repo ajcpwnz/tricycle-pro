@@ -27,24 +27,6 @@ function sha256(content) {
   return createHash('sha256').update(content).digest('hex').slice(0, 16);
 }
 
-function copyRecursive(src, dest) {
-  if (!existsSync(src)) return;
-  const stat = statSync(src);
-  if (stat.isDirectory()) {
-    mkdirSync(dest, { recursive: true });
-    for (const entry of readdirSync(src)) {
-      copyRecursive(join(src, entry), join(dest, entry));
-    }
-  } else {
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
-    // Preserve executable bit for .sh files
-    if (src.endsWith('.sh')) {
-      chmodSync(dest, 0o755);
-    }
-  }
-}
-
 function loadConfig() {
   const configPath = join(CWD, 'tricycle.config.yml');
   if (!existsSync(configPath)) {
@@ -365,7 +347,7 @@ function substituteAppVars(template, app) {
     .replace(/\{\{app\.port\}\}/g, String(app.port || ''));
 }
 
-function cmdGenerateSettings(config, lock) {
+function cmdGenerateSettings(config, _lock) {
   // Core permissions every project needs
   const permissions = [
     'Edit', 'Write',
@@ -376,7 +358,7 @@ function cmdGenerateSettings(config, lock) {
   const pm = config.project?.package_manager || 'npm';
   permissions.push(`Bash(${pm}:*)`);
   if (pm === 'bun') permissions.push('Bash(bunx:*)');
-  if (pm !== 'npm') permissions.push('Bash(npx:*)');
+  permissions.push('Bash(npx:*)');
   permissions.push('Bash(node:*)');
 
   // Docker permissions if any app uses docker

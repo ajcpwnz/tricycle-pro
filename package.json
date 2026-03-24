@@ -15,8 +15,8 @@
     "docs/"
   ],
   "scripts": {
-    "lint": "echo 'no lint configured yet'",
-    "test": "node --test tests/"
+    "lint": "eslint bin/ tests/",
+    "test": "node --test tests/cli.test.js"
   },
   "keywords": [
     "claude-code",
@@ -31,5 +31,8 @@
   },
   "dependencies": {
     "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "eslint": "^10.1.0"
   }
 }
