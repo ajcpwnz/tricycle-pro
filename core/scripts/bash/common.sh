@@ -180,21 +180,21 @@ check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
 # Resolve a template name to a file path using the priority stack:
-#   1. .specify/templates/overrides/
-#   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
-#   3. .specify/extensions/<ext-id>/templates/
-#   4. .specify/templates/ (core)
+#   1. .trc/templates/overrides/
+#   2. .trc/presets/<preset-id>/templates/ (sorted by priority from .registry)
+#   3. .trc/extensions/<ext-id>/templates/
+#   4. .trc/templates/ (core)
 resolve_template() {
     local template_name="$1"
     local repo_root="$2"
-    local base="$repo_root/.specify/templates"
+    local base="$repo_root/.trc/templates"
 
     # Priority 1: Project overrides
     local override="$base/overrides/${template_name}.md"
     [ -f "$override" ] && echo "$override" && return 0
 
     # Priority 2: Installed presets (sorted by priority from .registry)
-    local presets_dir="$repo_root/.specify/presets"
+    local presets_dir="$repo_root/.trc/presets"
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
         if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
@@ -240,7 +240,7 @@ except Exception:
     fi
 
     # Priority 3: Extension-provided templates
-    local ext_dir="$repo_root/.specify/extensions"
+    local ext_dir="$repo_root/.trc/extensions"
     if [ -d "$ext_dir" ]; then
         for ext in "$ext_dir"/*/; do
             [ -d "$ext" ] || continue

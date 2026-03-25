@@ -5,7 +5,7 @@
 ### Scenario 1: Basic end-to-end execution
 
 **Setup**: A project with Tricycle Pro initialized (tricycle.config.yml,
-.specify/, .claude/commands/ all present).
+.trc/, .claude/commands/ all present).
 
 **Steps**:
 1. Run `/trc.headless "add a greeting command that prints hello world"`

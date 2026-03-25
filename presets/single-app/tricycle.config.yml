@@ -31,5 +31,5 @@ push:
   merge_strategy: "squash"
 
 constitution:
-  root: ".specify/memory/constitution.md"
+  root: ".trc/memory/constitution.md"
   per_app: false

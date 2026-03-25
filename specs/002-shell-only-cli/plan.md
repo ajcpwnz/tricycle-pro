@@ -150,7 +150,7 @@ tricycle.config.yml
         │                    ──► .mcp.json
         │                    ──► .tricycle.lock
         │
-        └──► file install helpers (helpers.sh) ──► core/*/  →  .claude/*, .specify/*
+        └──► file install helpers (helpers.sh) ──► core/*/  →  .claude/*, .trc/*
 ```
 
 ## Bash 3.2 Compatibility Notes

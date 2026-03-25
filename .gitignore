@@ -8,7 +8,7 @@ node_modules/
 # Dogfood: installed copies live here but source-of-truth is core/ and modules/
 # Ignore everything tricycle init installs so it doesn't duplicate source files in git
 .claude/
-.specify/
+.trc/
 .mcp.json
 
 # Keep tricycle.config.yml tracked (it's the dogfood config for this repo)

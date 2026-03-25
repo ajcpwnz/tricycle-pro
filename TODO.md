@@ -21,5 +21,5 @@
 - [ ] Support non-interactive mode with flags for CI/scripting
 
 ## Bugs / Issues
-- [ ] `check-prerequisites.sh` script missing — `.specify/scripts/bash/check-prerequisites.sh` does not exist (exit code 127). Need to either create the script or remove the reference.
+- [ ] `check-prerequisites.sh` script missing — `.trc/scripts/bash/check-prerequisites.sh` does not exist (exit code 127). Need to either create the script or remove the reference.
 - [ ] Write hook blocks spec file creation on `main` even when the branch was already created by the script — hook doesn't detect that a worktree branch exists and should either auto-switch or give a more actionable error

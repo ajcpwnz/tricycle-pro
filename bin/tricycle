@@ -165,7 +165,7 @@ push:
   auto_merge: true
   merge_strategy: squash
 constitution:
-  root: .specify/memory/constitution.md
+  root: .trc/memory/constitution.md
   per_app: $per_app
   hierarchy: app-overrides-root
 YAML
@@ -182,17 +182,17 @@ YAML
   echo ""
   echo "Installing core..."
   install_dir "$TOOLKIT_ROOT/core/commands" ".claude/commands"
-  install_dir "$TOOLKIT_ROOT/core/templates" ".specify/templates"
-  install_dir "$TOOLKIT_ROOT/core/scripts/bash" ".specify/scripts/bash"
+  install_dir "$TOOLKIT_ROOT/core/templates" ".trc/templates"
+  install_dir "$TOOLKIT_ROOT/core/scripts/bash" ".trc/scripts/bash"
   install_dir "$TOOLKIT_ROOT/core/hooks" ".claude/hooks"
   install_dir "$TOOLKIT_ROOT/core/skills" ".claude/skills"
 
   # Constitution placeholder
-  local const_path="$CWD/.specify/memory/constitution.md"
+  local const_path="$CWD/.trc/memory/constitution.md"
   if [ ! -f "$const_path" ]; then
     mkdir -p "$(dirname "$const_path")"
     printf '# Project Constitution\n\n_Run `/trc.constitution` to populate this file._\n' > "$const_path"
-    info "WRITE .specify/memory/constitution.md (placeholder)"
+    info "WRITE .trc/memory/constitution.md (placeholder)"
   fi
 
   # Generate settings and gitignore
@@ -235,7 +235,7 @@ cmd_add() {
     "skills:.claude/skills" \
     "hooks:.claude/hooks" \
     "scripts:scripts" \
-    "templates:.specify/templates" \
+    "templates:.trc/templates" \
     "adapters:scripts/adapters" \
     "seeds:.claude/memory/seeds"; do
     sub="${pair%%:*}"
@@ -562,8 +562,8 @@ cmd_update() {
   local src_rel dest_rel
   for mapping in \
     "core/commands:.claude/commands" \
-    "core/templates:.specify/templates" \
-    "core/scripts/bash:.specify/scripts/bash" \
+    "core/templates:.trc/templates" \
+    "core/scripts/bash:.trc/scripts/bash" \
     "core/hooks:.claude/hooks"; do
 
     src_rel="${mapping%%:*}"
@@ -651,7 +651,7 @@ cmd_validate() {
 
   # Core directories
   local dir
-  for dir in ".claude/commands" ".specify/templates" ".specify/scripts/bash" ".claude/hooks"; do
+  for dir in ".claude/commands" ".trc/templates" ".trc/scripts/bash" ".claude/hooks"; do
     if [ ! -d "$CWD/$dir" ]; then
       echo "  ✗ missing: $dir" >&2; errors=$((errors + 1))
     else
@@ -661,7 +661,7 @@ cmd_validate() {
 
   # Constitution
   local const_root
-  const_root=$(cfg_get_or "constitution.root" ".specify/memory/constitution.md")
+  const_root=$(cfg_get_or "constitution.root" ".trc/memory/constitution.md")
   if [ ! -f "$CWD/$const_root" ]; then
     echo "  ✗ constitution not found: $const_root" >&2; errors=$((errors + 1))
   else

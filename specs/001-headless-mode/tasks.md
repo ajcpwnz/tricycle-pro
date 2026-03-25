@@ -29,7 +29,7 @@
 
 ### Implementation for User Story 1
 
-- [X] T002 [US1] Write the input validation section in core/commands/trc.headless.md: reject empty prompts with "No feature description provided", check for tricycle.config.yml and .specify/ directory existence, detect partial artifacts from prior runs
+- [X] T002 [US1] Write the input validation section in core/commands/trc.headless.md: reject empty prompts with "No feature description provided", check for tricycle.config.yml and .trc/ directory existence, detect partial artifacts from prior runs
 - [X] T003 [US1] Write the specify phase orchestration section in core/commands/trc.headless.md: invoke /trc.specify with the user's prompt, instruct auto-resolution of non-critical clarifications with informed guesses (max 3 NEEDS CLARIFICATION markers, auto-resolve where possible), auto-proceed through checklist validation
 - [X] T004 [US1] Write the plan phase orchestration section in core/commands/trc.headless.md: invoke /trc.plan using the generated spec, auto-continue without waiting for user input
 - [X] T005 [US1] Write the tasks phase orchestration section in core/commands/trc.headless.md: invoke /trc.tasks using the generated plan, auto-continue without waiting for user input

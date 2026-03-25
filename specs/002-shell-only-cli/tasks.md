@@ -41,7 +41,7 @@
 
 **Goal**: A developer can clone the repo and run `tricycle init --preset <name>` to scaffold a project with no Node.js or npm required. YAML config files are parsed correctly by the shell-based parser.
 
-**Independent Test**: Run `./bin/tricycle init --preset single-app` in a temp directory, verify all output files are created (tricycle.config.yml, .claude/settings.json, .claude/commands/*, .claude/hooks/*, .specify/templates/*, .specify/scripts/bash/*, .gitignore, .tricycle.lock, .specify/memory/constitution.md).
+**Independent Test**: Run `./bin/tricycle init --preset single-app` in a temp directory, verify all output files are created (tricycle.config.yml, .claude/settings.json, .claude/commands/*, .claude/hooks/*, .trc/templates/*, .trc/scripts/bash/*, .gitignore, .tricycle.lock, .trc/memory/constitution.md).
 
 ### Implementation for User Story 1 + 3
 
@@ -67,7 +67,7 @@
 - [x] T013 [P] [US2] Implement `cmd_generate` dispatch and `cmd_generate_claude_md` in `bin/tricycle` — dispatch to claude-md/settings/mcp targets; for claude-md: load config, conditionally assemble sections from `generators/sections/*.md.tpl` (docker if apps have docker, lint-test if push.require_lint/tests, push-gating if push.require_approval, worktree if worktree.enabled, qa if qa.enabled, mcp always, feature-branch always, artifact-cleanup always), process each section through template engine, concatenate with `---` separators, write CLAUDE.md
 - [x] T014 [P] [US2] Implement `cmd_generate_mcp` in `bin/tricycle` — load MCP preset JSON from `modules/mcp/presets/<preset>.json` (cat + pass through to output), merge custom servers from config (iterate `mcp.custom.*` keys, build JSON objects for http type vs command type), write `.mcp.json` via json_builder
 - [x] T015 [US2] Implement `cmd_update` in `bin/tricycle` — iterate core directory mappings (commands, templates, scripts, hooks), compare source checksums vs lock checksums, detect locally modified files (skip), detect new files (add), detect updated source files (update), support `--dry-run` flag (print without writing), save lock, print summary counts
-- [x] T016 [US2] Implement `cmd_validate` in `bin/tricycle` — check project.name and project.type exist in config, check each app path exists on disk, check core directories exist (.claude/commands, .specify/templates, .specify/scripts/bash, .claude/hooks), check constitution file exists, check hook scripts are executable (test -x), count errors, exit 1 if any errors
+- [x] T016 [US2] Implement `cmd_validate` in `bin/tricycle` — check project.name and project.type exist in config, check each app path exists on disk, check core directories exist (.claude/commands, .trc/templates, .trc/scripts/bash, .claude/hooks), check constitution file exists, check hook scripts are executable (test -x), count errors, exit 1 if any errors
 
 **Checkpoint**: All five subcommands produce output matching the Node.js CLI. Feature parity achieved.
 

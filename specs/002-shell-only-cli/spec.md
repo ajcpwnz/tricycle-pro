@@ -99,7 +99,7 @@ A developer wants to try Tricycle Pro or run a single command (e.g., `init`) wit
 - The CLI uses `#!/usr/bin/env bash` — running via a non-bash shell (dash, ash) is unsupported and may produce errors. No detection or warning is provided.
 - How does the YAML parser handle comments, multi-line strings, or quoted values with special characters in `tricycle.config.yml`?
 - What happens when `tricycle update` encounters a file that exists on disk but is not tracked in `.tricycle.lock`?
-- How does the CLI behave when run from a directory where `.specify/scripts/bash/` or other expected paths don't exist?
+- How does the CLI behave when run from a directory where `.trc/scripts/bash/` or other expected paths don't exist?
 - What happens when `tricycle init --preset` is given a preset name that contains special shell characters?
 
 ## Requirements *(mandatory)*
