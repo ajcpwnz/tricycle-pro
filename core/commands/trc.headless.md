@@ -1,8 +1,7 @@
 ---
 description: >-
-  Run the full specify, plan, tasks, implement chain automatically
-  from a single prompt. Pauses only for critical clarifications,
-  destructive actions, or push approval.
+  Run the full workflow chain automatically from a single prompt.
+  Pauses only for critical clarifications, destructive actions, or push approval.
 ---
 
 ## User Input
@@ -40,9 +39,8 @@ Before executing the chain, validate all prerequisites:
 
 ## Headless Execution Mode
 
-This command runs the **complete** specify, plan, tasks, implement
-chain in a single invocation. The key behavioral differences from
-running each command manually:
+This command runs the **complete** workflow chain in a single invocation.
+The key behavioral differences from running each command manually:
 
 - **Auto-continue**: Phase transitions happen automatically. Do NOT
   wait for user input between phases.
@@ -57,7 +55,7 @@ running each command manually:
 
 ## Phase Execution
 
-Execute these four phases in strict order. Each phase MUST complete
+Execute these phases in strict order. Each phase MUST complete
 fully and produce its standard artifacts before the next begins.
 
 ### --- Phase 1/4: Specify --- starting...
@@ -81,7 +79,7 @@ Invoke `/trc.specify` with the user's input as the feature description.
 
 ### --- Phase 2/4: Plan --- starting...
 
-Invoke `/trc.plan` using the spec generated in Phase 1.
+Invoke `/trc.plan` with the user's input as the feature description.
 
 **Headless behavior overrides**:
 - Do NOT wait for user input after the plan is generated.
@@ -96,7 +94,7 @@ Invoke `/trc.plan` using the spec generated in Phase 1.
 
 ### --- Phase 3/4: Tasks --- starting...
 
-Invoke `/trc.tasks` using the plan generated in Phase 2.
+Invoke `/trc.tasks` with the user's input as the feature description.
 
 **Headless behavior overrides**:
 - Do NOT wait for user input after tasks are generated.
@@ -108,7 +106,7 @@ Invoke `/trc.tasks` using the plan generated in Phase 2.
 
 ### --- Phase 4/4: Implement --- starting...
 
-Invoke `/trc.implement` using the tasks generated in Phase 3.
+Invoke `/trc.implement` with the user's input as the feature description.
 
 **Headless behavior overrides**:
 - Execute all task phases as defined in tasks.md.
@@ -117,7 +115,7 @@ Invoke `/trc.implement` using the tasks generated in Phase 3.
   and report the failure to the user (see Pause Rules below).
 - Do NOT push code or create a PR. After implementation completes,
   pause for push approval per constitution Principle III.
-- After implement completes (lint/tests pass), output:
+- After implement completes, output:
   ```
   --- Phase 4/4: Implement --- complete
   ```
@@ -178,7 +176,7 @@ or skip ahead to the next phase.
 
 ## Completion Summary
 
-When all four phases complete successfully, output:
+When all phases complete successfully, output:
 
 ```
 --- Headless Run Complete ---
@@ -205,7 +203,7 @@ If the chain fails at any phase and cannot recover, output:
 ```
 --- Headless Run Failed ---
 
-Failed at: Phase N/4 ([Phase Name])
+Failed at: Phase N/M ([Phase Name])
 Error: [description of what went wrong]
 Completed artifacts:
   - [list of artifacts successfully produced]

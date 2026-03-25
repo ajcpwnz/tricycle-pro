@@ -73,6 +73,8 @@ until the user has approved the push and the PR is merged. Cleanup sequence:
 - N/A (file-based artifacts only) (001-headless-mode)
 - Bash 3.2+ (macOS default), 4.0+ (Linux) + None — standard Unix utilities only (`sed`, `awk`, `grep`, `find`, `chmod`, `mkdir`, `cat`, `shasum`/`sha256sum`) (002-shell-only-cli)
 - File-based (YAML config input, JSON output, template files) (002-shell-only-cli)
+- Bash 3.2+ (macOS default), 4.0+ (Linux) + Standard Unix utilities (`sed`, `awk`, `grep`, `find`, `cat`, `mkdir`) (003-workflow-chains-blocks)
+- File-based (YAML config, markdown blocks, markdown command output) (003-workflow-chains-blocks)
 
 ## Recent Changes
 - 001-headless-mode: Added JavaScript (Node.js >= 18.0.0) + yaml (existing), node:test (existing)
