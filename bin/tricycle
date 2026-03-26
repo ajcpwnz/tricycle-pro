@@ -188,7 +188,7 @@ YAML
   install_dir "$TOOLKIT_ROOT/core/scripts/bash" ".trc/scripts/bash"
   install_dir "$TOOLKIT_ROOT/core/hooks" ".claude/hooks"
   install_dir "$TOOLKIT_ROOT/core/skills" ".claude/skills"
-  install_dir "$TOOLKIT_ROOT/core/blocks" ".specify/blocks"
+  install_dir "$TOOLKIT_ROOT/core/blocks" ".trc/blocks"
 
   # Constitution placeholder
   local const_path="$CWD/.trc/memory/constitution.md"

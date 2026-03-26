@@ -8,7 +8,7 @@ order: 60
 ---
 
 3. **Agent context update**:
-   - Run `.specify/scripts/bash/update-agent-context.sh claude`
+   - Run `.trc/scripts/bash/update-agent-context.sh claude`
    - These scripts detect which AI agent is in use
    - Update the appropriate agent-specific context file
    - Add only new technology from current plan

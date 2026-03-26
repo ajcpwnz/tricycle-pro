@@ -24,7 +24,7 @@ workflow:
       enable:
         - test-local-stack     # Example: enable optional block
       custom:
-        - .specify/blocks/custom/my-validation.md
+        - .trc/blocks/custom/my-validation.md
 ```
 
 ## Validation Rules

@@ -56,11 +56,11 @@ describe('parse_block_overrides', () => {
       '  blocks:',
       '    implement:',
       '      custom:',
-      '        - .specify/blocks/custom/my-block.md',
+      '        - .trc/blocks/custom/my-block.md',
     ].join('\n'));
 
     const result = runBash(`parse_block_overrides "${tmpFile}" implement`);
-    assert.ok(result.includes('custom=.specify/blocks/custom/my-block.md'));
+    assert.ok(result.includes('custom=.trc/blocks/custom/my-block.md'));
     fs.unlinkSync(tmpFile);
   });
 

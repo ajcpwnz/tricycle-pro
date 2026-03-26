@@ -20,7 +20,7 @@ tricycle assemble [--dry-run] [--verbose]
 
 1. Read `tricycle.config.yml` → extract `workflow.chain` and `workflow.blocks`
 2. For each step in the chain:
-   a. Collect enabled blocks from `.specify/blocks/{step}/`
+   a. Collect enabled blocks from `.trc/blocks/{step}/`
    b. Apply config overrides (disable/enable/custom)
    c. Determine absorbed blocks from omitted steps
    d. Sort all blocks by `order`
