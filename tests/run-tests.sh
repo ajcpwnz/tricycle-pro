@@ -250,6 +250,48 @@ run_test "ordered style produces numbered branch" bash -c '
   rm -rf "$dir"
 '
 
+# ── --no-checkout flag ──
+
+echo ""
+echo "--no-checkout flag:"
+
+run_test "--no-checkout creates branch without checking it out" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style ordered --short-name "test-noco" --json --no-checkout 2>/dev/null)
+  git branch --list | grep -q "001-test-noco" || exit 1
+  current=$(git rev-parse --abbrev-ref HEAD)
+  [ "$current" != "001-test-noco" ] || exit 1
+  rm -rf "$dir"
+'
+
+run_test "--no-checkout does not create spec directory" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style ordered --short-name "test-noco2" --json --no-checkout 2>/dev/null)
+  [ ! -d specs/001-test-noco2 ] || exit 1
+  rm -rf "$dir"
+'
+
+run_test "--no-checkout still outputs valid JSON" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style ordered --short-name "test-noco3" --json --no-checkout 2>/dev/null)
+  echo "$out" | grep -q "\"BRANCH_NAME\":\"001-test-noco3\"" || exit 1
+  echo "$out" | grep -q "\"SPEC_FILE\":" || exit 1
+  rm -rf "$dir"
+'
+
+run_test "without --no-checkout still checks out branch (backwards compat)" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style ordered --short-name "test-compat" --json 2>/dev/null)
+  current=$(git rev-parse --abbrev-ref HEAD)
+  [ "$current" = "001-test-compat" ] || exit 1
+  [ -d specs/001-test-compat ] || exit 1
+  rm -rf "$dir"
+'
+
 # ── Summary ──
 
 echo ""

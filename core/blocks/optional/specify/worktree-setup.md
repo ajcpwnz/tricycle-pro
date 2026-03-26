@@ -8,38 +8,27 @@ order: 5
 companions: implement:worktree-cleanup
 ---
 
-## Worktree Setup
+## Worktree Setup (Detection)
 
-Before creating the feature branch or writing any spec files, ensure you are working in a git worktree — not the main checkout.
+Before creating the feature branch, determine whether you need to work in a git worktree.
 
 ### Detection
 
-Check if the current working directory is already a worktree:
-- If `.git` is a **file** (not a directory), you are in a worktree — proceed to the next block.
-- If `.git` is a **directory**, you are in the main checkout — you MUST create a worktree first.
+Check the current working directory:
+- If `.git` is a **file** (not a directory), you are already in a worktree. Set `WORKTREE_MODE=already` and proceed to the next block.
+- If `.git` is a **directory**, you are in the main checkout. Set `WORKTREE_MODE=needed` — the feature-setup block will handle worktree creation after branch creation.
 
-### Creating the Worktree
+### Configuration
 
-1. Read `tricycle.config.yml` for the worktree path pattern (default: `../{project}-{branch}`).
+Read `tricycle.config.yml` for worktree settings:
+- `project.name` — for substitution into the path pattern
+- Default worktree path: `../{project}-{branch}` (where `{project}` is the project name and `{branch}` is the branch name from the script output)
 
-2. You do NOT have the branch name yet (that comes from `feature-setup`). Instead:
-   - Generate the short branch name first (same logic as feature-setup: 2-4 word name from the feature description).
-   - Run `create-new-feature.sh` to get the branch name and number.
-   - Then create the worktree:
-     ```bash
-     git checkout main  # ensure main is checked out in primary
-     git worktree add ../{project}-{branch} {branch}
-     ```
-
-3. After creating the worktree, **all subsequent work must happen in the worktree directory**. Use absolute paths to the worktree for all file operations.
-
-4. If `.trc/` does not exist in the worktree (it's gitignored), copy it from the main checkout:
-   ```bash
-   cp -r /path/to/main/.specify /path/to/worktree/.specify
-   ```
+Keep these values available for the feature-setup block.
 
 ### Notes
 
+- This block only detects and configures. It does NOT create branches or worktrees.
+- The feature-setup block (next) will use `WORKTREE_MODE` to decide whether to pass `--no-checkout` to `create-new-feature.sh` and whether to create the worktree after branch creation.
 - The worktree isolates feature work from the main checkout, preventing accidental changes to main.
-- This block replaces the `block-spec-in-main.sh` and `block-branch-in-main.sh` enforcement hooks with proactive worktree creation.
-- If worktree creation fails (e.g., branch already checked out), report the error and suggest the user resolve the conflict manually.
+- If worktree creation fails later (e.g., branch already checked out elsewhere), report the error and suggest the user resolve the conflict manually.

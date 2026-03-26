@@ -11,6 +11,27 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 
+## Chain Validation
+
+Before proceeding, read `tricycle.config.yml` and check the `workflow.chain` configuration.
+
+1. If `workflow.chain` is not defined, use the default chain: `[specify, plan, tasks, implement]`.
+2. Validate the chain is one of these valid configurations:
+   - `[specify, plan, tasks, implement]` (default — full workflow)
+   - `[specify, plan, implement]` (tasks absorbed into plan)
+   - `[specify, implement]` (plan and tasks absorbed into specify)
+3. If the chain is invalid, STOP and output:
+   ```
+   Error: Invalid workflow chain configuration.
+   Valid chains: [specify, plan, tasks, implement], [specify, plan, implement], [specify, implement]
+   ```
+4. Verify that `implement` is present in the configured chain. If not, STOP and output:
+   ```
+   Error: Step 'implement' is not part of the configured workflow chain [current chain].
+   To use this step, update workflow.chain in tricycle.config.yml and run tricycle assemble.
+   ```
+
+
 1. Run `.trc/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 
@@ -142,3 +163,28 @@ You **MUST** consider the user input before proceeding (if not empty).
     - Include the version bump in the final commit (do NOT create a separate commit for it)
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/trc.tasks` first to regenerate the task list.
+
+
+## Worktree Cleanup Reminder
+
+After implementation is complete, lint/tests pass, and the user has approved the push:
+
+**Do NOT clean up automatically.** Per the artifact cleanup rules, worktrees and spec artifacts MUST NOT be cleaned up until the PR is merged.
+
+Instead, after the push is approved and PR is created, remind the user:
+
+```
+Worktree cleanup available after PR merge:
+
+  # Remove the worktree
+  git worktree remove ../[worktree-path]
+
+  # Prune stale worktree references
+  git worktree prune
+
+  # Optionally delete the feature branch (after merge)
+  git branch -d [branch-name]
+```
+
+Only display this reminder if the current working directory is a worktree (`.git` is a file, not a directory). If already in the main checkout, skip this block silently.
+

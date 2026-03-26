@@ -69,8 +69,37 @@ The script auto-detects the next sequential number. Branch name will be `###-<sl
 - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
 - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
 
+### Step 2b: Worktree creation (if worktree-setup block is active)
+
+If `WORKTREE_MODE=needed` (set by the worktree-setup block above):
+
+1. **Add `--no-checkout` to the script invocation from Step 2.** This creates the branch without switching to it and without creating the spec directory or template file. The JSON output still contains BRANCH_NAME, SPEC_FILE, and FEATURE_NUM.
+
+2. **After parsing the JSON output**, create the worktree using the branch name:
+   ```bash
+   git worktree add ../{project}-{BRANCH_NAME} {BRANCH_NAME}
+   ```
+   Where `{project}` is `project.name` from `tricycle.config.yml`.
+
+3. **Copy `.trc/`** from the main checkout to the worktree if it does not exist (it is typically gitignored):
+   ```bash
+   cp -r /path/to/main/.trc /path/to/worktree/.trc
+   ```
+
+4. **Change your working context to the worktree directory.** All subsequent operations MUST happen in the worktree.
+
+5. **Create the spec directory and copy the template** inside the worktree:
+   ```bash
+   mkdir -p specs/{BRANCH_NAME}
+   cp .trc/templates/spec-template.md specs/{BRANCH_NAME}/spec.md
+   ```
+
+If `WORKTREE_MODE` is not set (worktree-setup block is not active), skip this step — the script already handled checkout, spec directory, and template in Step 2.
+
 ### Step 3: Load template
 
 Load `.trc/templates/spec-template.md` to understand required sections.
 
-**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
+**NOTE:**
+- Without worktree mode: The script creates and checks out the new branch and initializes the spec file.
+- With worktree mode (`--no-checkout`): The script only creates the branch and outputs JSON. The spec directory, template copy, and worktree are set up in Step 2b.

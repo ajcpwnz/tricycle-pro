@@ -3,6 +3,7 @@
 set -e
 
 JSON_MODE=false
+NO_CHECKOUT=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
 STYLE=""
@@ -15,6 +16,9 @@ while [ $i -le $# ]; do
     case "$arg" in
         --json)
             JSON_MODE=true
+            ;;
+        --no-checkout)
+            NO_CHECKOUT=true
             ;;
         --short-name)
             if [ $((i + 1)) -gt $# ]; then
@@ -83,7 +87,7 @@ while [ $i -le $# ]; do
             ISSUE_PREFIX="$next_arg"
             ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--style <style>] [--issue <id>] [--prefix <prefix>] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--style <style>] [--issue <id>] [--prefix <prefix>] [--no-checkout] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
@@ -92,6 +96,7 @@ while [ $i -le $# ]; do
             echo "  --style <style>     Branch naming style: feature-name, issue-number, ordered (default: ordered)"
             echo "  --issue <id>        Issue identifier for issue-number style (e.g., TRI-042)"
             echo "  --prefix <prefix>   Issue prefix for extraction from description (e.g., TRI)"
+            echo "  --no-checkout       Create branch without checking it out (for worktree workflows)"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
@@ -357,14 +362,25 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
 fi
 
 if [ "$HAS_GIT" = true ]; then
-    if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
-        # Check if branch already exists
-        if git branch --list "$BRANCH_NAME" | grep -q .; then
-            >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
-            exit 1
-        else
-            >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'. Please check your git configuration and try again."
-            exit 1
+    if [ "$NO_CHECKOUT" = true ]; then
+        if ! git branch "$BRANCH_NAME" 2>/dev/null; then
+            if git branch --list "$BRANCH_NAME" | grep -q .; then
+                >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
+                exit 1
+            else
+                >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'. Please check your git configuration and try again."
+                exit 1
+            fi
+        fi
+    else
+        if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
+            if git branch --list "$BRANCH_NAME" | grep -q .; then
+                >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
+                exit 1
+            else
+                >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'. Please check your git configuration and try again."
+                exit 1
+            fi
         fi
     fi
 else
@@ -372,15 +388,18 @@ else
 fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
-mkdir -p "$FEATURE_DIR"
-
-TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
 SPEC_FILE="$FEATURE_DIR/spec.md"
-if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
-    cp "$TEMPLATE" "$SPEC_FILE"
-else
-    echo "Warning: Spec template not found; created empty spec file" >&2
-    touch "$SPEC_FILE"
+
+if [ "$NO_CHECKOUT" = false ]; then
+    mkdir -p "$FEATURE_DIR"
+
+    TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
+    if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
+        cp "$TEMPLATE" "$SPEC_FILE"
+    else
+        echo "Warning: Spec template not found; created empty spec file" >&2
+        touch "$SPEC_FILE"
+    fi
 fi
 
 # Inform the user how to persist the feature variable in their own shell

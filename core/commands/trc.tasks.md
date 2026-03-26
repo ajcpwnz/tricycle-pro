@@ -20,6 +20,27 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 
+## Chain Validation
+
+Before proceeding, read `tricycle.config.yml` and check the `workflow.chain` configuration.
+
+1. If `workflow.chain` is not defined, use the default chain: `[specify, plan, tasks, implement]`.
+2. Validate the chain is one of these valid configurations:
+   - `[specify, plan, tasks, implement]` (default — full workflow)
+   - `[specify, plan, implement]` (tasks absorbed into plan)
+   - `[specify, implement]` (plan and tasks absorbed into specify)
+3. If the chain is invalid, STOP and output:
+   ```
+   Error: Invalid workflow chain configuration.
+   Valid chains: [specify, plan, tasks, implement], [specify, plan, implement], [specify, implement]
+   ```
+4. Verify that `tasks` is present in the configured chain. If not, STOP and output:
+   ```
+   Error: Step 'tasks' is not part of the configured workflow chain [current chain].
+   To use this step, update workflow.chain in tricycle.config.yml and run tricycle assemble.
+   ```
+
+
 1. **Setup**: Run `.trc/scripts/bash/check-prerequisites.sh --json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 
@@ -136,3 +157,4 @@ Every task MUST strictly follow this format:
    - Independent test criteria for each story
    - Suggested MVP scope (typically just User Story 1)
    - Format validation: Confirm ALL tasks follow the checklist format (checkbox, ID, labels, file paths)
+

@@ -19,6 +19,27 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 
+## Chain Validation
+
+Before proceeding, read `tricycle.config.yml` and check the `workflow.chain` configuration.
+
+1. If `workflow.chain` is not defined, use the default chain: `[specify, plan, tasks, implement]`.
+2. Validate the chain is one of these valid configurations:
+   - `[specify, plan, tasks, implement]` (default — full workflow)
+   - `[specify, plan, implement]` (tasks absorbed into plan)
+   - `[specify, implement]` (plan and tasks absorbed into specify)
+3. If the chain is invalid, STOP and output:
+   ```
+   Error: Invalid workflow chain configuration.
+   Valid chains: [specify, plan, tasks, implement], [specify, plan, implement], [specify, implement]
+   ```
+4. Verify that `plan` is present in the configured chain. If not, STOP and output:
+   ```
+   Error: Step 'plan' is not part of the configured workflow chain [current chain].
+   To use this step, update workflow.chain in tricycle.config.yml and run tricycle assemble.
+   ```
+
+
 1. **Setup**: Run `.trc/scripts/bash/setup-plan.sh --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC and `.trc/memory/constitution.md`. Load IMPL_PLAN template (already copied).
