@@ -163,9 +163,14 @@ run_test "generate claude-md creates CLAUDE.md with project name" bash -c '
   grep -q "test-proj" CLAUDE.md
 '
 
-run_test "generate claude-md includes push gating section" bash -c '
+run_test "generate claude-md omits push gating (now in block)" bash -c '
   cd "'"$TMPDIR_INIT"'/init-single"
-  grep -q "Push Gating" CLAUDE.md
+  "'"$CLI"'" generate claude-md >/dev/null 2>&1
+  ! grep -q "Push Gating" CLAUDE.md
+'
+
+run_test "push-deploy block exists in core/blocks/implement" bash -c '
+  [ -f "'"$REPO_ROOT"'/core/blocks/implement/push-deploy.md" ]
 '
 
 run_test "generated settings.json always includes npx permission" bash -c '
@@ -190,7 +195,6 @@ run_test "generate claude-md with monorepo preset exercises all sections" bash -
   echo "mono-test" | "'"$CLI"'" init --preset monorepo-turborepo >/dev/null 2>&1
   "'"$CLI"'" generate claude-md >/dev/null 2>&1
   grep -q "mono-test" CLAUDE.md &&
-  grep -q "Push Gating" CLAUDE.md &&
   grep -q "Lint" CLAUDE.md &&
   grep -q "Worktree" CLAUDE.md
 '
