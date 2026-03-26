@@ -73,6 +73,9 @@ deploy:
     - name: "Deploy Frontend"
       paths: ["apps/frontend/**", "packages/**", "bun.lock"]
 
+branching:
+  style: feature-name
+
 constitution:
   root: ".trc/memory/constitution.md"
   per_app: true

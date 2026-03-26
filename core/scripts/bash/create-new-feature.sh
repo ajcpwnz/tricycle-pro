@@ -5,6 +5,9 @@ set -e
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
+STYLE=""
+ISSUE_ID=""
+ISSUE_PREFIX=""
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -40,18 +43,62 @@ while [ $i -le $# ]; do
             fi
             BRANCH_NUMBER="$next_arg"
             ;;
+        --style)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --style requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --style requires a value' >&2
+                exit 1
+            fi
+            STYLE="$next_arg"
+            ;;
+        --issue)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --issue requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --issue requires a value' >&2
+                exit 1
+            fi
+            ISSUE_ID="$next_arg"
+            ;;
+        --prefix)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --prefix requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --prefix requires a value' >&2
+                exit 1
+            fi
+            ISSUE_PREFIX="$next_arg"
+            ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--style <style>] [--issue <id>] [--prefix <prefix>] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
-            echo "  --number N          Specify branch number manually (overrides auto-detection)"
+            echo "  --number N          Specify branch number manually (overrides auto-detection, ordered style only)"
+            echo "  --style <style>     Branch naming style: feature-name, issue-number, ordered (default: ordered)"
+            echo "  --issue <id>        Issue identifier for issue-number style (e.g., TRI-042)"
+            echo "  --prefix <prefix>   Issue prefix for extraction from description (e.g., TRI)"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
-            echo "  $0 'Add user authentication system' --short-name 'user-auth'"
-            echo "  $0 'Implement OAuth2 integration for API' --number 5"
+            echo "  $0 'Add dark mode toggle' --style feature-name --short-name 'dark-mode'"
+            echo "  $0 'TRI-042 Add export to CSV' --style issue-number --prefix TRI --short-name 'export-csv'"
+            echo "  $0 'Add user authentication' --style ordered --short-name 'user-auth'"
+            echo "  $0 'Add user authentication' --short-name 'user-auth'  # defaults to ordered"
             exit 0
             ;;
         *)
@@ -73,6 +120,18 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     echo "Error: Feature description cannot be empty or contain only whitespace" >&2
     exit 1
 fi
+
+# Validate and default the style
+if [ -z "$STYLE" ]; then
+    STYLE="ordered"
+fi
+case "$STYLE" in
+    feature-name|issue-number|ordered) ;;
+    *)
+        echo "Error: Invalid --style '$STYLE'. Must be one of: feature-name, issue-number, ordered" >&2
+        exit 1
+        ;;
+esac
 
 # Function to find the repository root by searching for existing project markers
 find_repo_root() {
@@ -233,47 +292,65 @@ generate_branch_name() {
     fi
 }
 
-# Generate branch name
+# Generate branch suffix (slug) from short name or description
 if [ -n "$SHORT_NAME" ]; then
-    # Use provided short name, just clean it up
     BRANCH_SUFFIX=$(clean_branch_name "$SHORT_NAME")
 else
-    # Generate from description with smart filtering
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
 fi
 
-# Determine branch number
-if [ -z "$BRANCH_NUMBER" ]; then
-    if [ "$HAS_GIT" = true ]; then
-        # Check existing branches on remotes
-        BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
-    else
-        # Fall back to local directory check
-        HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
-        BRANCH_NUMBER=$((HIGHEST + 1))
-    fi
-fi
+# --- Style-aware branch name generation ---
 
-# Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
-FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
-BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+generate_ordered_branch() {
+    if [ -z "$BRANCH_NUMBER" ]; then
+        if [ "$HAS_GIT" = true ]; then
+            BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
+        else
+            local highest
+            highest=$(get_highest_from_specs "$SPECS_DIR")
+            BRANCH_NUMBER=$((highest + 1))
+        fi
+    fi
+    FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
+    BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+}
+
+generate_feature_name_branch() {
+    FEATURE_NUM=""
+    BRANCH_NAME="$BRANCH_SUFFIX"
+}
+
+generate_issue_number_branch() {
+    local issue=""
+    if [ -n "$ISSUE_ID" ]; then
+        issue="$ISSUE_ID"
+    elif [ -n "$ISSUE_PREFIX" ]; then
+        issue=$(echo "$FEATURE_DESCRIPTION" | grep -ioE "${ISSUE_PREFIX}-[0-9]+" | head -1)
+    else
+        issue=$(echo "$FEATURE_DESCRIPTION" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+    fi
+    if [ -z "$issue" ]; then
+        echo "Error: Issue number required for issue-number style. Use --issue <ID> or include it in the description (e.g., TRI-042)." >&2
+        exit 2
+    fi
+    # Normalize issue to uppercase
+    issue=$(echo "$issue" | tr '[:lower:]' '[:upper:]')
+    FEATURE_NUM="$issue"
+    BRANCH_NAME="${issue}-${BRANCH_SUFFIX}"
+}
+
+# Dispatch by style
+case "$STYLE" in
+    feature-name) generate_feature_name_branch ;;
+    issue-number) generate_issue_number_branch ;;
+    ordered)      generate_ordered_branch ;;
+esac
 
 # GitHub enforces a 244-byte limit on branch names
-# Validate and truncate if necessary
 MAX_BRANCH_LENGTH=244
 if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
-    # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
-
-    # Truncate suffix at word boundary if possible
-    TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
-    # Remove trailing hyphen if truncation created one
-    TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
-
     ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
-
+    BRANCH_NAME=$(echo "$BRANCH_NAME" | cut -c1-$MAX_BRANCH_LENGTH | sed 's/-$//')
     >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
     >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
