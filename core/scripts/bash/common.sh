@@ -72,9 +72,14 @@ check_feature_branch() {
         return 0
     fi
 
-    if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
+    # Accept all branching styles:
+    #   ordered:      ###-slug      (e.g., 001-feature-name)
+    #   issue-number: PREFIX-N-slug (e.g., TRI-1-push-deploy)
+    #   feature-name: slug          (e.g., dark-mode-toggle)
+    # Reject only well-known default branches
+    if [[ "$branch" =~ ^(main|master|develop|staging)$ ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: 001-feature-name" >&2
+        echo "Switch to a feature branch before running this command." >&2
         return 1
     fi
 

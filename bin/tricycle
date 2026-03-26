@@ -318,9 +318,8 @@ cmd_generate_claude_md() {
     sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/lint-test.md.tpl")"
   fi
 
-  if [ "$(cfg_get "push.require_approval")" = "true" ]; then
-    sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/push-gating.md.tpl")"
-  fi
+  # push-gating, feature-branch-pr, and artifact-cleanup are now handled by the
+  # push-deploy implement block — no longer emitted into CLAUDE.md
 
   if [ "$(cfg_get "worktree.enabled")" = "true" ]; then
     sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/worktree-workflow.md.tpl")"
@@ -333,9 +332,6 @@ cmd_generate_claude_md() {
   if cfg_has "mcp."; then
     sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/mcp-usage.md.tpl")"
   fi
-
-  sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/feature-branch-pr.md.tpl")"
-  sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/artifact-cleanup.md.tpl")"
 
   local project_name
   project_name=$(cfg_get_or "project.name" "my-project")
