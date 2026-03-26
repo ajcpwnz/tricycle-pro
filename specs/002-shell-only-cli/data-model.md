@@ -18,7 +18,7 @@ The parsed representation of the YAML config file. After parsing, stored as flat
 | `mcp.custom.{name}.{field}` | `mcp.custom.prisma.command=npx` | string |
 | `mcp.custom.{name}.args.{n}` | `mcp.custom.prisma.args.0=prisma` | string |
 | `push.{field}` | `push.require_approval=true` | string |
-| `constitution.{field}` | `constitution.root=.specify/memory/constitution.md` | string |
+| `constitution.{field}` | `constitution.root=.trc/memory/constitution.md` | string |
 
 **Derived counts** (computed during parsing):
 - `apps.__count` — number of app entries

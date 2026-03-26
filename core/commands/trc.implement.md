@@ -11,7 +11,7 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 
-1. Run `.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. Run `.trc/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
@@ -142,4 +142,3 @@ You **MUST** consider the user input before proceeding (if not empty).
     - Include the version bump in the final commit (do NOT create a separate commit for it)
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/trc.tasks` first to regenerate the task list.
-

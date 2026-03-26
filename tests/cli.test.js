@@ -191,7 +191,7 @@ describe('tricycle init --preset', () => {
   });
 
   it('creates constitution placeholder', () => {
-    ok(existsSync(join(tmpDir, '.specify/memory/constitution.md')));
+    ok(existsSync(join(tmpDir, '.trc/memory/constitution.md')));
   });
 });
 

@@ -99,6 +99,6 @@ Suggested next steps: [actions]
 |-------|----------|
 | Empty prompt | Fail immediately: "No feature description provided." |
 | Missing tricycle.config.yml | Fail immediately: "Tricycle Pro not initialized." |
-| Missing .specify/ directory | Fail immediately: "Tricycle Pro not initialized." |
+| Missing .trc/ directory | Fail immediately: "Tricycle Pro not initialized." |
 | Phase script failure | Report error, suggest manual intervention |
 | Lint/test failure | Attempt fix (up to 3 retries), then pause |

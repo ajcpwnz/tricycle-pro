@@ -23,12 +23,12 @@ Initialize a project with Tricycle Pro.
 **Output files**:
 - `tricycle.config.yml`
 - `.claude/commands/*` (from `core/commands/`)
-- `.specify/templates/*` (from `core/templates/`)
-- `.specify/scripts/bash/*` (from `core/scripts/bash/`)
+- `.trc/templates/*` (from `core/templates/`)
+- `.trc/scripts/bash/*` (from `core/scripts/bash/`)
 - `.claude/hooks/*` (from `core/hooks/`)
 - `.claude/skills/*` (from `core/skills/`)
 - `.claude/settings.json`
-- `.specify/memory/constitution.md` (placeholder if missing)
+- `.trc/memory/constitution.md` (placeholder if missing)
 - `.gitignore` (appended or created)
 - `.tricycle.lock`
 
@@ -86,7 +86,7 @@ Validate configuration and installed files.
 **Checks**:
 - `project.name` and `project.type` exist in config
 - All app paths exist on disk
-- Core directories present (`.claude/commands`, `.specify/templates`, `.specify/scripts/bash`, `.claude/hooks`)
+- Core directories present (`.claude/commands`, `.trc/templates`, `.trc/scripts/bash`, `.claude/hooks`)
 - Constitution file exists
 - Hook scripts are executable
 

@@ -74,6 +74,6 @@ deploy:
       paths: ["apps/frontend/**", "packages/**", "bun.lock"]
 
 constitution:
-  root: ".specify/memory/constitution.md"
+  root: ".trc/memory/constitution.md"
   per_app: true
   hierarchy: "app-overrides-root"

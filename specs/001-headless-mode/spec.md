@@ -148,7 +148,7 @@ a structured summary is printed at completion.
 
 - What happens if Tricycle Pro is not initialized in the project?
   The system MUST detect missing prerequisites (tricycle.config.yml,
-  .specify/ directory) and fail fast with an actionable error.
+  .trc/ directory) and fail fast with an actionable error.
 
 - What happens if a previous headless run left partial artifacts?
   The system MUST detect existing spec directories for the same

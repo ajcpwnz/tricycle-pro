@@ -103,7 +103,7 @@ run_test "installs .claude/settings.json" assert_file_exists "$TMPDIR_INIT/init-
 run_test "installs hook scripts as executable" assert_file_executable "$TMPDIR_INIT/init-single/.claude/hooks/block-spec-in-main.sh"
 run_test "installs command templates" assert_file_exists "$TMPDIR_INIT/init-single/.claude/commands/trc.plan.md"
 run_test "creates .tricycle.lock" assert_file_exists "$TMPDIR_INIT/init-single/.tricycle.lock"
-run_test "creates constitution placeholder" assert_file_exists "$TMPDIR_INIT/init-single/.specify/memory/constitution.md"
+run_test "creates constitution placeholder" assert_file_exists "$TMPDIR_INIT/init-single/.trc/memory/constitution.md"
 run_test "validate succeeds on initialized project" bash -c "cd '$TMPDIR_INIT/init-single' && '$CLI' validate"
 
 # ── Init errors ──
