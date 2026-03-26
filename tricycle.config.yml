@@ -31,6 +31,9 @@ workflow:
       skills:
         - code-reviewer
 
+worktree:
+  enabled: false
+
 mcp:
   preset: "minimal"
 
