@@ -1,17 +1,17 @@
 # Minimal single-app project
 
 project:
-  name: "my-app"
+  name: "tricycle-pro"
   type: "single-app"
   package_manager: "npm"
   base_branch: "main"
 
 apps:
-  - name: app
+  - name: cli
     path: "."
-    type: web
-    lint: "npm run lint"
-    build: "npm run build"
+    type: cli
+    test: "bash tests/run-tests.sh"
+    test-blocks: "node --test tests/test-*.js"
 
 branching:
   style: issue-number
@@ -23,9 +23,6 @@ workflow:
       enable:
         - worktree-setup
 
-worktree:
-  enabled: false
-
 mcp:
   preset: "minimal"
 
@@ -34,8 +31,8 @@ qa:
 
 push:
   require_approval: true
-  require_lint: true
-  require_tests: false
+  require_lint: false
+  require_tests: true
   pr_target: "main"
   auto_merge: false
   merge_strategy: "squash"
