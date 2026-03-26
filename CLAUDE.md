@@ -3,7 +3,7 @@
 ## Commands
 
 
-- **cli**: `cd . && npm run lint` (lint), `cd . && node --test tests/` (test)
+- **cli**: `cd . && bash tests/run-tests.sh` (test), `cd . && node --test tests/test-*.js` (test-blocks)
 
 
 ### Package Manager
@@ -18,7 +18,7 @@ After ANY code changes, you MUST run lint and test scripts for ALL affected apps
 and ensure they pass BEFORE declaring work complete.
 
 
-- **cli**: `cd . && npm run lint`
+- **cli**: `cd . && bash tests/run-tests.sh`
 
 
 If any script fails, fix the issue. Never skip this step.
