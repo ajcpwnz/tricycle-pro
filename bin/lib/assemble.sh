@@ -27,10 +27,10 @@ cmd_assemble() {
   echo "Assembling commands from blocks..."
 
   # Run assembly with project-local blocks and output
-  local blocks_dir="$CWD/.specify/blocks"
+  local blocks_dir="$CWD/.trc/blocks"
   local output_dir="$CWD/.claude/commands"
 
-  # Fall back to core blocks if .specify/blocks doesn't exist
+  # Fall back to core blocks if .trc/blocks doesn't exist
   if [ ! -d "$blocks_dir" ]; then
     blocks_dir="$TOOLKIT_ROOT/core/blocks"
   fi

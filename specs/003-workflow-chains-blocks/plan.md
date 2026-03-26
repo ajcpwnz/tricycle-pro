@@ -114,7 +114,7 @@ tests/
 ├── test-block-assembly.js           # NEW — block assembly integration tests
 └── test-config-parsing.js           # NEW — YAML workflow section parsing
 
-.specify/
+.trc/
 ├── blocks/                          # NEW — synced from core/blocks/ during init
 │   └── (mirrors core/blocks/ structure)
 └── memory/

@@ -26,9 +26,9 @@
 
 ## Decision 3: Block Storage & Distribution
 
-**Decision**: Blocks in `core/blocks/{step}/`, synced to `.specify/blocks/` during init
+**Decision**: Blocks in `core/blocks/{step}/`, synced to `.trc/blocks/` during init
 
-**Rationale**: Follows established sync pattern (`core/templates/` → `.specify/templates/`, `core/scripts/` → `.specify/scripts/`). Users can customize blocks locally; `.tricycle.lock` tracks checksums.
+**Rationale**: Follows established sync pattern (`core/templates/` → `.trc/templates/`, `core/scripts/` → `.trc/scripts/`). Users can customize blocks locally; `.tricycle.lock` tracks checksums.
 
 **Alternatives considered**:
 - Blocks only in core/ (rejected — user projects need them for local assembly)

@@ -46,7 +46,7 @@ After `tricycle assemble`, `/trc.implement` includes local stack testing instruc
 
 ## Scenario 4: Add a Custom Block
 
-Create `.specify/blocks/custom/security-review.md`:
+Create `.trc/blocks/custom/security-review.md`:
 ```markdown
 ---
 name: security-review
@@ -71,7 +71,7 @@ workflow:
   blocks:
     implement:
       custom:
-        - .specify/blocks/custom/security-review.md
+        - .trc/blocks/custom/security-review.md
 ```
 
 Block appears between prerequisites (20) and checklist-validation (30).
@@ -80,7 +80,7 @@ Block appears between prerequisites (20) and checklist-validation (30).
 
 **Before** (deprecated):
 ```yaml
-# .specify/extensions.yml
+# .trc/extensions.yml
 hooks:
   before_implement:
     - enabled: true

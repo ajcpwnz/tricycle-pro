@@ -33,7 +33,7 @@ Check if the current working directory is already a worktree:
 
 3. After creating the worktree, **all subsequent work must happen in the worktree directory**. Use absolute paths to the worktree for all file operations.
 
-4. If `.specify/` does not exist in the worktree (it's gitignored), copy it from the main checkout:
+4. If `.trc/` does not exist in the worktree (it's gitignored), copy it from the main checkout:
    ```bash
    cp -r /path/to/main/.specify /path/to/worktree/.specify
    ```

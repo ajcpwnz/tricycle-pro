@@ -6,7 +6,7 @@
 ## Block File Structure
 
 Markdown files with YAML frontmatter stored in:
-- Built-in: `core/blocks/{step}/{block-name}.md` → `.specify/blocks/{step}/{block-name}.md`
+- Built-in: `core/blocks/{step}/{block-name}.md` → `.trc/blocks/{step}/{block-name}.md`
 - Custom: Any path referenced in `workflow.blocks.{step}.custom`
 
 ## Frontmatter Schema

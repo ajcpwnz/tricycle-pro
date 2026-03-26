@@ -141,7 +141,7 @@ workflow:
       enable:
         - test-local-stack      # add local stack testing
       custom:
-        - .specify/blocks/custom/security-review.md  # your own block
+        - .trc/blocks/custom/security-review.md  # your own block
     specify:
       enable:
         - worktree-setup        # worktree-cleanup auto-enabled via companion
@@ -228,7 +228,7 @@ push:
   merge_strategy: squash
 
 constitution:
-  root: .specify/memory/constitution.md
+  root: .trc/memory/constitution.md
 ```
 
 ## Presets

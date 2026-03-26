@@ -461,7 +461,7 @@ Before executing the chain, validate all prerequisites:
    Do NOT proceed with any phase.
 
 2. **Project initialization check**: Verify that `tricycle.config.yml`
-   exists in the project root AND that the `.specify/` directory exists.
+   exists in the project root AND that the `.trc/` directory exists.
    If either is missing, STOP immediately and output:
    ```
    Error: Tricycle Pro not initialized.
