@@ -19,40 +19,202 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 
+## Worktree Setup (Detection)
+
+Before creating the feature branch, determine whether you need to work in a git worktree.
+
+### Detection
+
+Check the current working directory:
+- If `.git` is a **file** (not a directory), you are already in a worktree. Set `WORKTREE_MODE=already` and proceed to the next block.
+- If `.git` is a **directory**, you are in the main checkout. Set `WORKTREE_MODE=needed` — the feature-setup block will handle worktree creation after branch creation.
+
+### Configuration
+
+Read `tricycle.config.yml` for worktree settings:
+- `project.name` — for substitution into the path pattern
+- Default worktree path: `../{project}-{branch}` (where `{project}` is the project name and `{branch}` is the branch name from the script output)
+
+Keep these values available for the feature-setup block.
+
+### Notes
+
+- This block only detects and configures. It does NOT create branches or worktrees.
+- The feature-setup block (next) will use `WORKTREE_MODE` to decide whether to pass `--no-checkout` to `create-new-feature.sh` and whether to create the worktree after branch creation.
+- The worktree isolates feature work from the main checkout, preventing accidental changes to main.
+- If worktree creation fails later (e.g., branch already checked out elsewhere), report the error and suggest the user resolve the conflict manually.
+
+
 ## Outline
 
 The text the user typed after `/trc.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `$ARGUMENTS` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
 Given that feature description, do this:
 
-1. **Generate a concise short name** (2-4 words) for the branch:
-   - Analyze the feature description and extract the most meaningful keywords
-   - Create a 2-4 word short name that captures the essence of the feature
-   - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
-   - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
-   - Keep it concise but descriptive enough to understand the feature at a glance
-   - Examples:
-     - "I want to add user authentication" → "user-auth"
-     - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
-     - "Create a dashboard for analytics" → "analytics-dashboard"
-     - "Fix payment processing timeout bug" → "fix-payment-timeout"
+### Step 0: Read branch naming configuration
 
-2. **Create the feature branch** by running the script with `--short-name` (and `--json`), and do NOT pass `--number` (the script auto-detects the next globally available number across all branches and spec directories):
+Read `tricycle.config.yml` in the project root and check for:
+- `branching.style` — one of `feature-name` (default), `issue-number`, or `ordered`
+- `branching.prefix` — issue prefix for `issue-number` style (e.g., `TRI`, `JIRA`)
 
-   - Bash example: `.trc/scripts/bash/create-new-feature.sh "$ARGUMENTS" --json --short-name "user-auth" "Add user authentication"`
-   - PowerShell example: `.trc/scripts/bash/create-new-feature.sh "$ARGUMENTS" -Json -ShortName "user-auth" "Add user authentication"`
+If `branching` section is missing, use `feature-name` as the default style.
 
-   **IMPORTANT**:
-   - Do NOT pass `--number` — the script determines the correct next number automatically
-   - Always include the JSON flag (`--json` for Bash, `-Json` for PowerShell) so the output can be parsed reliably
-   - You must only ever run this script once per feature
-   - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
-   - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
-   - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
+### Step 1: Generate a concise short name (2-4 words) for the branch
 
-3. Load `.trc/templates/spec-template.md` to understand required sections.
+- Analyze the feature description and extract the most meaningful keywords
+- Create a 2-4 word short name that captures the essence of the feature
+- Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
+- Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
+- Keep it concise but descriptive enough to understand the feature at a glance
+- Examples:
+  - "I want to add user authentication" → "user-auth"
+  - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
+  - "Create a dashboard for analytics" → "analytics-dashboard"
+  - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
+### Step 2: Create the feature branch (style-aware)
+
+Build the script invocation based on the configured `branching.style`:
+
+**For `feature-name` style** (default):
+```bash
+.trc/scripts/bash/create-new-feature.sh "$ARGUMENTS" --json --style feature-name --short-name "<slug>"
+```
+No numeric prefix. Branch name will be the slug directly (e.g., `dark-mode-toggle`).
+
+**For `issue-number` style**:
+1. Scan the user's description for an issue identifier matching the configured `branching.prefix` pattern (e.g., `TRI-042`). If no prefix is configured, look for any `LETTERS-DIGITS` pattern.
+2. If an issue number is found:
+   ```bash
+   .trc/scripts/bash/create-new-feature.sh "$ARGUMENTS" --json --style issue-number --issue "<ISSUE_ID>" --prefix "<PREFIX>" --short-name "<slug>"
+   ```
+3. If **no issue number is found** in the description:
+   - Ask the user: "What is the issue number? (e.g., `<PREFIX>-042`)"
+   - Wait for the user's response
+   - Then run the script with `--issue <user_response>`
+
+   Branch name will be `<ISSUE>-<slug>` (e.g., `TRI-042-export-csv`).
+
+**For `ordered` style**:
+```bash
+.trc/scripts/bash/create-new-feature.sh "$ARGUMENTS" --json --style ordered --short-name "<slug>"
+```
+The script auto-detects the next sequential number. Branch name will be `###-<slug>` (e.g., `004-notifications`).
+
+**IMPORTANT**:
+- Always include `--json` so the output can be parsed reliably
+- You must only ever run this script once per feature
+- The JSON output will contain BRANCH_NAME and SPEC_FILE paths
+- For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
+
+### Step 2b: Worktree creation (if worktree-setup block is active)
+
+If `WORKTREE_MODE=needed` (set by the worktree-setup block above):
+
+1. **Add `--no-checkout` to the script invocation from Step 2.** This creates the branch without switching to it and without creating the spec directory or template file. The JSON output still contains BRANCH_NAME, SPEC_FILE, and FEATURE_NUM.
+
+2. **After parsing the JSON output**, create the worktree using the branch name:
+   ```bash
+   git worktree add ../{project}-{BRANCH_NAME} {BRANCH_NAME}
+   ```
+   Where `{project}` is `project.name` from `tricycle.config.yml`.
+
+3. **Copy `.trc/`** from the main checkout to the worktree if it does not exist (it is typically gitignored):
+   ```bash
+   cp -r /path/to/main/.trc /path/to/worktree/.trc
+   ```
+
+4. **Change your working context to the worktree directory.** All subsequent operations MUST happen in the worktree.
+
+5. **Create the spec directory and copy the template** inside the worktree:
+   ```bash
+   mkdir -p specs/{BRANCH_NAME}
+   cp .trc/templates/spec-template.md specs/{BRANCH_NAME}/spec.md
+   ```
+
+If `WORKTREE_MODE` is not set (worktree-setup block is not active), skip this step — the script already handled checkout, spec directory, and template in Step 2.
+
+### Step 3: Load template
+
+Load `.trc/templates/spec-template.md` to understand required sections.
+
+**NOTE:**
+- Without worktree mode: The script creates and checks out the new branch and initializes the spec file.
+- With worktree mode (`--no-checkout`): The script only creates the branch and outputs JSON. The spec directory, template copy, and worktree are set up in Step 2b.
+
+
+## Chain Validation
+
+Before proceeding, read `tricycle.config.yml` and check the `workflow.chain` configuration.
+
+1. If `workflow.chain` is not defined, use the default chain: `[specify, plan, tasks, implement]`.
+2. Validate the chain is one of these valid configurations:
+   - `[specify, plan, tasks, implement]` (default — full workflow)
+   - `[specify, plan, implement]` (tasks absorbed into plan)
+   - `[specify, implement]` (plan and tasks absorbed into specify)
+3. If the chain is invalid, STOP and output:
+   ```
+   Error: Invalid workflow chain configuration.
+   Valid chains: [specify, plan, tasks, implement], [specify, plan, implement], [specify, implement]
+   ```
+4. Verify that `specify` is present in the configured chain. If not, STOP and output:
+   ```
+   Error: Step 'specify' is not part of the configured workflow chain.
+   ```
+
+Note the chain configuration — it will be used by subsequent blocks to determine absorbed responsibilities.
+
+
+## Input Detail Validation
+
+After reading the chain configuration, validate that the user's feature description provides sufficient detail for the configured chain length. Shorter chains require more detailed input because fewer planning phases are available to flesh out the details.
+
+### Validation Rules by Chain Length
+
+**Full chain `[specify, plan, tasks, implement]`**:
+- Accept any non-empty feature description.
+- Planning and task generation phases will flesh out the details.
+- No minimum detail requirement beyond a basic description.
+
+**Three-step chain `[specify, plan, implement]`**:
+- The feature description should describe at least:
+  - **Scope**: What the feature does and doesn't include
+  - **Expected outcomes**: What success looks like
+- If the description is very brief (roughly 1-2 sentences with no specifics), output:
+  ```
+  Your feature description may be too brief for a shortened workflow chain.
+  Since the tasks step is omitted, the plan step will also generate tasks.
+  Consider adding: scope boundaries and expected outcomes.
+  ```
+  Then ask the user if they want to proceed or provide more detail.
+
+**Two-step chain `[specify, implement]`**:
+- The feature description MUST describe at least:
+  - **Scope**: What the feature does and its boundaries
+  - **Expected behavior**: How it should work from a user perspective
+  - **Technical constraints**: Key limitations or requirements
+  - **Acceptance criteria**: How to verify the feature works
+- If the description lacks these elements (roughly under 3-4 sentences with no technical detail), STOP and output:
+  ```
+  Error: Feature description is too brief for a specify-implement chain.
+
+  Since plan and tasks steps are omitted, the specify step must also handle
+  technical planning and task generation. Please provide more detail:
+
+  - Scope: What does this feature include/exclude?
+  - Expected behavior: How should it work?
+  - Technical constraints: Any limitations or requirements?
+  - Acceptance criteria: How do we verify it works?
+
+  Provide an expanded description or switch to a longer chain in tricycle.config.yml.
+  ```
+  Wait for the user to provide a more detailed description before proceeding.
+
+### Notes
+
+- This validation uses AI judgment, not rigid character counts. A concise but information-dense description may pass even if short.
+- If the user has provided enough semantic content (clear scope, outcomes, constraints) the description should be accepted regardless of length.
+- A highly detailed prompt always passes regardless of chain length.
 
 
 ## Execution Flow

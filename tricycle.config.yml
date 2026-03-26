@@ -13,6 +13,16 @@ apps:
     lint: "npm run lint"
     build: "npm run build"
 
+branching:
+  style: issue-number
+  prefix: TRI
+
+workflow:
+  blocks:
+    specify:
+      enable:
+        - worktree-setup
+
 worktree:
   enabled: false
 
