@@ -195,6 +195,61 @@ run_test "generate claude-md with monorepo preset exercises all sections" bash -
   grep -q "Worktree" CLAUDE.md
 '
 
+# ── Branch naming styles ──
+
+echo ""
+echo "Branch naming styles:"
+
+CREATE_SCRIPT="$REPO_ROOT/core/scripts/bash/create-new-feature.sh"
+
+run_test "feature-name style produces slug-only branch" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add dark mode toggle" --style feature-name --short-name "dark-mode" --json 2>/dev/null)
+  echo "$out" | grep -q "\"BRANCH_NAME\":\"dark-mode\""
+  rm -rf "$dir"
+'
+
+run_test "default style without flag is ordered" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add something" --short-name "something" --json 2>/dev/null)
+  echo "$out" | grep -qE "\"BRANCH_NAME\":\"[0-9]{3}-something\""
+  rm -rf "$dir"
+'
+
+run_test "issue-number style with explicit issue" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add export" --style issue-number --issue TRI-042 --short-name "export" --json 2>/dev/null)
+  echo "$out" | grep -q "\"BRANCH_NAME\":\"TRI-042-export\""
+  rm -rf "$dir"
+'
+
+run_test "issue-number style extracts from description" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "TRI-042 Add export feature" --style issue-number --prefix TRI --short-name "export" --json 2>/dev/null)
+  echo "$out" | grep -q "\"BRANCH_NAME\":\"TRI-042-export\""
+  rm -rf "$dir"
+'
+
+run_test "issue-number style exits 2 when no issue found" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && mkdir -p specs
+  "'"$CREATE_SCRIPT"'" "Add export" --style issue-number --short-name "export" --json >/dev/null 2>&1
+  [ $? -eq 2 ]
+  rm -rf "$dir"
+'
+
+run_test "ordered style produces numbered branch" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add notifications" --style ordered --short-name "notifications" --json 2>/dev/null)
+  echo "$out" | grep -qE "\"BRANCH_NAME\":\"[0-9]{3}-notifications\""
+  rm -rf "$dir"
+'
+
 # ── Summary ──
 
 echo ""

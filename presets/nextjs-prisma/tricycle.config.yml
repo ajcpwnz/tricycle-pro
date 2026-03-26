@@ -50,6 +50,9 @@ push:
   auto_merge: false
   merge_strategy: "squash"
 
+branching:
+  style: feature-name
+
 constitution:
   root: ".trc/memory/constitution.md"
   per_app: false
