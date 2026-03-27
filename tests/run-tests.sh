@@ -199,6 +199,30 @@ run_test "generate claude-md with monorepo preset exercises all sections" bash -
   grep -q "Worktree" CLAUDE.md
 '
 
+run_test "generate claude-md produces no awk errors on stderr" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-monorepo"
+  cd "$dir"
+  errors=$("'"$CLI"'" generate claude-md 2>&1 >/dev/null)
+  [ -z "$errors" ]
+'
+
+run_test "generate claude-md for all presets succeeds without errors" bash -c '
+  for preset in single-app express-prisma; do
+    dir="'"$TMPDIR_INIT"'/gen-test-$preset"
+    mkdir -p "$dir" && cd "$dir"
+    echo "gen-$preset" | "'"$CLI"'" init --preset "$preset" >/dev/null 2>&1
+    errors=$("'"$CLI"'" generate claude-md 2>&1 >/dev/null)
+    [ -z "$errors" ] || exit 1
+    grep -q "gen-$preset" CLAUDE.md || exit 1
+  done
+'
+
+run_test "generated CLAUDE.md has no leftover template markers" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-monorepo"
+  cd "$dir"
+  ! grep -q "{{" CLAUDE.md
+'
+
 # ── Skills system ──
 
 echo ""

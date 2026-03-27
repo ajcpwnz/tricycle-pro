@@ -110,20 +110,20 @@ process_if_blocks() {
       content="${content//$close_tag/}"
     else
       # Remove block between markers (handles multiline via awk)
-      content=$(printf '%s' "$content" | awk -v open="$open_tag" -v close="$close_tag" '
+      content=$(printf '%s' "$content" | awk -v otag="$open_tag" -v ctag="$close_tag" '
         BEGIN { skip = 0; found = 0 }
         {
-          if (!found && index($0, open)) {
+          if (!found && index($0, otag)) {
             found = 1
             # Print content before the open tag on this line
-            before = $0
-            sub(open ".*", "", before)
+            pos = index($0, otag)
+            before = (pos > 1) ? substr($0, 1, pos - 1) : ""
             if (before != "") printf "%s", before
 
             # Check if close tag is on same line
-            if (index($0, close)) {
-              after = $0
-              sub(".*" close, "", after)
+            if (index($0, ctag)) {
+              cpos = index($0, ctag)
+              after = substr($0, cpos + length(ctag))
               if (after != "") printf "%s", after
               printf "\n"
               skip = 0
@@ -133,9 +133,9 @@ process_if_blocks() {
             }
             next
           }
-          if (skip && index($0, close)) {
-            after = $0
-            sub(".*" close, "", after)
+          if (skip && index($0, ctag)) {
+            cpos = index($0, ctag)
+            after = substr($0, cpos + length(ctag))
             if (after != "") print after
             skip = 0
             next
