@@ -133,6 +133,26 @@ Before proceeding, read `tricycle.config.yml` and check the `workflow.chain` con
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding
 
+### Test/Lint Gate (after EVERY phase)
+
+**MANDATORY — NONNEGOTIABLE.** After completing each implementation phase, you MUST run all configured test and lint commands before proceeding to the next phase.
+
+1. Read `apps` from `tricycle.config.yml`. For each app, check for `test` and `lint` fields.
+2. Skip any app where both `test` and `lint` are missing or empty.
+3. Run each configured command. All must exit 0.
+4. **If any command fails**:
+   - Attempt to fix the issue (read the error output, identify the root cause, apply a fix).
+   - Re-run **all** test/lint commands (not just the one that failed).
+   - You have a maximum of **3 fix attempts**.
+   - If all commands pass within 3 attempts → proceed to the next phase.
+   - If still failing after 3 attempts → **HALT**. Do NOT proceed. Report:
+     - Which command failed
+     - The exit code
+     - Relevant output (last 20 lines)
+     - What fixes were attempted
+     - Clear statement: **"Cannot proceed — tests/lint failing after 3 fix attempts. Manual intervention required."**
+5. **You MUST NOT proceed to the next phase, to push-deploy, or to any subsequent block while tests or lint are failing.** This gate is non-negotiable.
+
 7. Implementation execution rules:
    - **Setup first**: Initialize project structure, dependencies, configuration
    - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
@@ -148,10 +168,18 @@ Before proceeding, read `tricycle.config.yml` and check the `workflow.chain` con
    - Suggest next steps if implementation cannot proceed
    - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
 
-9. Completion validation:
+9. Final test/lint gate and completion validation:
+
+   **MANDATORY — NONNEGOTIABLE.** After ALL implementation phases are complete, run the full test/lint suite one final time. This catches regressions introduced during later phases.
+
+   1. Run every configured `test` and `lint` command across all apps.
+   2. Same retry logic as the per-phase gate: attempt fix, re-run all commands, max 3 attempts.
+   3. **If still failing after 3 attempts → HALT.** Do NOT proceed to version-bump or push-deploy. Report the failure with full context.
+   4. **Do NOT mark implementation as complete while any test or lint command is failing.**
+
+   Once the final gate passes:
    - Verify all required tasks are completed
    - Check that implemented features match the original specification
-   - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
    - Report final status with summary of completed work
 
