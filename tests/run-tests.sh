@@ -210,19 +210,19 @@ run_test "init installs all 5 vendored skills" bash -c '
   [ -d "$dir/.claude/skills/tdd" ] &&
   [ -d "$dir/.claude/skills/debugging" ] &&
   [ -d "$dir/.claude/skills/document-writer" ] &&
-  [ -d "$dir/.claude/skills/monorepo-structure" ]
+  [ -d "$dir/.claude/skills/catholic" ]
 '
 
 run_test "each vendored skill has SKILL.md" bash -c '
   dir="'"$TMPDIR_INIT"'/init-single"
-  for s in code-reviewer tdd debugging document-writer monorepo-structure; do
+  for s in code-reviewer tdd debugging document-writer catholic; do
     [ -f "$dir/.claude/skills/$s/SKILL.md" ] || exit 1
   done
 '
 
 run_test "each vendored skill has SOURCE file" bash -c '
   dir="'"$TMPDIR_INIT"'/init-single"
-  for s in code-reviewer tdd debugging document-writer monorepo-structure; do
+  for s in code-reviewer tdd debugging document-writer catholic; do
     [ -f "$dir/.claude/skills/$s/SOURCE" ] || exit 1
   done
 '
@@ -262,7 +262,25 @@ run_test "skills list shows installed skills" bash -c '
   cd "'"$TMPDIR_INIT"'/init-single"
   output=$("'"$CLI"'" skills list 2>&1)
   echo "$output" | grep -q "code-reviewer" &&
-  echo "$output" | grep -q "monorepo-structure"
+  echo "$output" | grep -q "catholic"
+'
+
+run_test "catholic skill has valid SKILL.md" bash -c '
+  [ -f "'"$REPO_ROOT"'/core/skills/catholic/SKILL.md" ] &&
+  head -5 "'"$REPO_ROOT"'/core/skills/catholic/SKILL.md" | grep -q "name: catholic"
+'
+
+run_test "catholic skill has SOURCE file" bash -c '
+  [ -f "'"$REPO_ROOT"'/core/skills/catholic/SOURCE" ] &&
+  grep -q "^origin: " "'"$REPO_ROOT"'/core/skills/catholic/SOURCE"
+'
+
+run_test "catholic block exists with correct frontmatter" bash -c '
+  f="'"$REPO_ROOT"'/core/blocks/optional/specify/catholic.md"
+  [ -f "$f" ] &&
+  head -10 "$f" | grep -q "order: 1" &&
+  head -10 "$f" | grep -q "required: false" &&
+  head -10 "$f" | grep -q "default_enabled: false"
 '
 
 run_test "help text includes skills command" bash -c '
