@@ -231,6 +231,177 @@ lock_set() {
   fi
 }
 
+# ─── Skills ──────────────────────────────────────────────────────────────────
+
+skill_checksum() {
+  local skill_dir="$1"
+  local combined=""
+  while IFS= read -r f; do
+    combined="${combined}$(cat "$f")"
+  done < <(find "$skill_dir" -type f ! -name SOURCE | sort)
+  sha256_str "$combined"
+}
+
+generate_source_file() {
+  local skill_dir="$1" origin="$2" commit="${3:-}"
+  local cs
+  cs=$(skill_checksum "$skill_dir")
+  {
+    printf 'origin: %s\n' "$origin"
+    [ -n "$commit" ] && printf 'commit: %s\n' "$commit"
+    printf 'installed: %s\n' "$(date +%Y-%m-%d)"
+    printf 'checksum: %s\n' "$cs"
+  } > "$skill_dir/SOURCE"
+}
+
+source_get() {
+  local source_file="$1" key="$2"
+  grep -m1 "^${key}: " "$source_file" 2>/dev/null | cut -d' ' -f2-
+}
+
+install_skills() {
+  local src_base="$1" dest_rel_base="$2"
+  [ -d "$src_base" ] || return 0
+
+  # Build disabled skills list
+  local disabled=""
+  local dc
+  dc=$(cfg_count "skills.disable")
+  local di=0
+  while [ "$di" -lt "$dc" ]; do
+    local dname
+    dname=$(cfg_get "skills.disable.$di")
+    disabled="${disabled} ${dname} "
+    di=$((di + 1))
+  done
+
+  local skill_name skill_path
+  for skill_path in "$src_base"/*/; do
+    [ -d "$skill_path" ] || continue
+    skill_path="${skill_path%/}"
+    skill_name=$(basename "$skill_path")
+
+    # Skip disabled
+    if echo "$disabled" | grep -q " ${skill_name} "; then
+      info "SKIP .claude/skills/$skill_name (disabled)"
+      # Warn if already installed
+      if [ -d "$CWD/$dest_rel_base/$skill_name" ]; then
+        info "NOTICE: $dest_rel_base/$skill_name is disabled but still installed (delete manually if unwanted)"
+      fi
+      continue
+    fi
+
+    install_dir "$skill_path" "$dest_rel_base/$skill_name"
+
+    # Generate SOURCE for vendored skills
+    local dest_skill="$CWD/$dest_rel_base/$skill_name"
+    if [ -d "$dest_skill" ]; then
+      local commit=""
+      if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+        commit=$(git rev-parse HEAD 2>/dev/null || true)
+      fi
+      generate_source_file "$dest_skill" "vendored:core/skills/$skill_name" "$commit"
+      info "WRITE $dest_rel_base/$skill_name/SOURCE"
+    fi
+  done
+}
+
+fetch_external_skill() {
+  local source_uri="$1" dest_base="$2"
+  local scheme="${source_uri%%:*}"
+  local path="${source_uri#*:}"
+
+  # Detect name collision with vendored skill
+  local ext_name
+  ext_name=$(basename "$path")
+  if [ -d "$CWD/$dest_base/$ext_name" ] && [ -f "$CWD/$dest_base/$ext_name/SOURCE" ]; then
+    local existing_origin
+    existing_origin=$(source_get "$CWD/$dest_base/$ext_name/SOURCE" "origin")
+    case "$existing_origin" in
+      vendored:*)
+        info "WARNING: external skill '$ext_name' overrides vendored default"
+        ;;
+    esac
+  fi
+
+  case "$scheme" in
+    github)
+      # Parse github:owner/repo/skill-path
+      local owner repo skill_path skill_name
+      owner=$(echo "$path" | cut -d/ -f1)
+      repo=$(echo "$path" | cut -d/ -f2)
+      skill_path=$(echo "$path" | cut -d/ -f3-)
+      skill_name=$(basename "$skill_path")
+
+      if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$skill_path" ]; then
+        error "Invalid github source: $source_uri (expected github:owner/repo/path)"
+        return 1
+      fi
+
+      local tmpdir
+      tmpdir=$(mktemp -d)
+
+      info "FETCH $source_uri"
+      if ! git clone --depth=1 --filter=blob:none --sparse \
+        "https://github.com/${owner}/${repo}.git" "$tmpdir" 2>/dev/null; then
+        error "Failed to clone https://github.com/${owner}/${repo}.git"
+        rm -rf "$tmpdir"
+        return 1
+      fi
+
+      if ! git -C "$tmpdir" sparse-checkout set "$skill_path" 2>/dev/null; then
+        error "Failed to sparse-checkout $skill_path from $owner/$repo"
+        rm -rf "$tmpdir"
+        return 1
+      fi
+
+      if [ ! -d "$tmpdir/$skill_path" ]; then
+        error "Skill path $skill_path not found in $owner/$repo"
+        rm -rf "$tmpdir"
+        return 1
+      fi
+
+      local dest_skill="$CWD/$dest_base/$skill_name"
+      mkdir -p "$dest_skill"
+      cp -R "$tmpdir/$skill_path"/* "$dest_skill/" 2>/dev/null || true
+      cp -R "$tmpdir/$skill_path"/.* "$dest_skill/" 2>/dev/null || true
+
+      local commit
+      commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null || echo "")
+      generate_source_file "$dest_skill" "$source_uri" "$commit"
+      info "WRITE $dest_base/$skill_name/SOURCE"
+
+      rm -rf "$tmpdir"
+      ;;
+    local)
+      local skill_name
+      skill_name=$(basename "$path")
+      local src_path="$path"
+      # Resolve relative paths from CWD
+      [[ "$src_path" != /* ]] && src_path="$CWD/$src_path"
+
+      if [ ! -d "$src_path" ]; then
+        error "Local skill path not found: $path"
+        return 1
+      fi
+
+      local dest_skill="$CWD/$dest_base/$skill_name"
+      mkdir -p "$dest_skill"
+      cp -R "$src_path"/* "$dest_skill/" 2>/dev/null || true
+      cp -R "$src_path"/.* "$dest_skill/" 2>/dev/null || true
+
+      generate_source_file "$dest_skill" "$source_uri" ""
+      info "FETCH local:$path"
+      info "WRITE $dest_base/$skill_name/SOURCE"
+      ;;
+    *)
+      error "Unknown skill source scheme: $scheme (expected github: or local:)"
+      return 1
+      ;;
+  esac
+  return 0
+}
+
 # ─── File Installation ───────────────────────────────────────────────────────
 
 install_file() {
