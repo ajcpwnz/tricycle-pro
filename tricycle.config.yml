@@ -22,6 +22,14 @@ workflow:
     specify:
       enable:
         - worktree-setup
+      skills:
+        - document-writer
+    plan:
+      skills:
+        - document-writer
+    implement:
+      skills:
+        - code-reviewer
 
 mcp:
   preset: "minimal"

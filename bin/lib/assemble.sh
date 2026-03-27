@@ -39,7 +39,7 @@ cmd_assemble() {
     --blocks-dir="$blocks_dir" \
     --output-dir="$output_dir" \
     --config="$CWD/tricycle.config.yml" \
-    "${flags[@]}"
+    ${flags[@]+"${flags[@]}"}
 
   echo ""
 }
