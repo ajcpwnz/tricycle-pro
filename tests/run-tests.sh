@@ -287,6 +287,28 @@ run_test "help text includes skills command" bash -c '
   "'"$CLI"'" --help 2>&1 | grep -q "skills list"
 '
 
+run_test "audit command exists with valid frontmatter" bash -c '
+  f="'"$REPO_ROOT"'/core/commands/trc.audit.md"
+  [ -f "$f" ] &&
+  head -5 "$f" | grep -q "description:" &&
+  grep -q "Constitution" "$f" &&
+  grep -q "docs/audits/" "$f"
+'
+
+run_test "linear-audit skill has valid SKILL.md" bash -c '
+  [ -f "'"$REPO_ROOT"'/core/skills/linear-audit/SKILL.md" ] &&
+  head -5 "'"$REPO_ROOT"'/core/skills/linear-audit/SKILL.md" | grep -q "name: linear-audit"
+'
+
+run_test "linear-audit skill has SOURCE file" bash -c '
+  [ -f "'"$REPO_ROOT"'/core/skills/linear-audit/SOURCE" ] &&
+  grep -q "^origin: " "'"$REPO_ROOT"'/core/skills/linear-audit/SOURCE"
+'
+
+run_test "docs/audits directory exists" bash -c '
+  [ -d "'"$REPO_ROOT"'/docs/audits" ]
+'
+
 # ── Branch naming styles ──
 
 echo ""
