@@ -313,9 +313,20 @@ assemble_step() {
     local block_count
     block_count=$(echo "$sorted_blocks" | grep -c '|' || true)
 
+    # Parse skills for this step (for verbose output and generation)
+    local step_overrides=""
+    step_overrides=$(parse_block_overrides "$config_file" "$step")
+    local step_skills=()
+    while IFS= read -r item; do
+        [[ -z "$item" ]] && continue
+        step_skills+=("$item")
+    done < <(echo "$step_overrides" | grep '^skills=' | cut -d= -f2-)
+
     if [[ $VERBOSE -eq 1 ]] || [[ $DRY_RUN -eq 1 ]]; then
+        local skill_info=""
+        [[ ${#step_skills[@]} -gt 0 ]] && skill_info=", ${#step_skills[@]} skills"
         echo ""
-        echo "Step: $step ($block_count blocks)"
+        echo "Step: $step ($block_count blocks${skill_info})"
         echo "$sorted_blocks" | while IFS='|' read -r order file name source; do
             local marker="✓"
             [[ "$source" == absorbed:* ]] && marker="+"
@@ -327,6 +338,9 @@ assemble_step() {
             is_req=$(get_block_field "$file" "required")
             [[ "$is_req" == "true" ]] && req=" (required)"
             echo "  $marker $name ($source, order: $order)$req"
+        done
+        for sname in "${step_skills[@]}"; do
+            echo "  ⚡ skill: $sname"
         done
         echo "  → $output_file"
     fi
@@ -367,6 +381,29 @@ assemble_step() {
             echo ""
             prev_source="$source"
         done
+
+        # Inject configured skills invocations
+        local overrides=""
+        overrides=$(parse_block_overrides "$config_file" "$step")
+        local skill_items=()
+        while IFS= read -r item; do
+            [[ -z "$item" ]] && continue
+            skill_items+=("$item")
+        done < <(echo "$overrides" | grep '^skills=' | cut -d= -f2-)
+
+        if [[ ${#skill_items[@]} -gt 0 ]]; then
+            echo ""
+            echo "## Skill Invocations"
+            echo ""
+            echo "The following skills are configured for the \`${step}\` step. Invoke each one if installed; skip gracefully if not."
+            echo ""
+            for skill_name in "${skill_items[@]}"; do
+                echo "- If \`.claude/skills/${skill_name}/SKILL.md\` exists, invoke \`/${skill_name}\`. If the skill is not installed, skip this invocation and continue."
+            done
+            echo ""
+            echo "Context for invocation: "
+            echo ""
+        fi
     } > "$output_file"
 }
 

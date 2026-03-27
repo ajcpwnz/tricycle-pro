@@ -25,3 +25,6 @@ If any script fails, fix the issue. Never skip this step.
 MCP servers are configured in `.mcp.json`. Use them in the appropriate contexts.
 If an MCP requires a service to be running (e.g., Docker, a dev server, the database),
 start that service BEFORE attempting to use the MCP.
+
+## Recent Changes
+- TRI-3-skills-system: Skills management system — vendor defaults, external install, config-driven disable, skills list command, block integration

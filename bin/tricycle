@@ -71,6 +71,7 @@ Usage:
   tricycle update [--dry-run]         Update core files to latest version
   tricycle update-self                Update the tricycle CLI itself
   tricycle assemble [--dry-run]        Assemble commands from blocks based on workflow config
+  tricycle skills list                 List installed skills with source and status
   tricycle validate                   Validate configuration and installed files
 
 Options:
@@ -187,8 +188,25 @@ YAML
   install_dir "$TOOLKIT_ROOT/core/templates" ".trc/templates"
   install_dir "$TOOLKIT_ROOT/core/scripts/bash" ".trc/scripts/bash"
   install_dir "$TOOLKIT_ROOT/core/hooks" ".claude/hooks"
-  install_dir "$TOOLKIT_ROOT/core/skills" ".claude/skills"
+  install_skills "$TOOLKIT_ROOT/core/skills" ".claude/skills"
   install_dir "$TOOLKIT_ROOT/core/blocks" ".trc/blocks"
+
+  # Install external skills from config
+  local ext_count
+  ext_count=$(cfg_count "skills.install")
+  if [ "$ext_count" -gt 0 ]; then
+    echo ""
+    echo "Installing external skills..."
+    local ei=0
+    while [ "$ei" -lt "$ext_count" ]; do
+      local src
+      src=$(cfg_get "skills.install.$ei.source")
+      if [ -n "$src" ]; then
+        fetch_external_skill "$src" ".claude/skills" || info "ERROR $src — fetch failed (continuing)"
+      fi
+      ei=$((ei + 1))
+    done
+  fi
 
   # Constitution placeholder
   local const_path="$CWD/.trc/memory/constitution.md"
@@ -605,12 +623,120 @@ cmd_update() {
     done < <(find "$src_dir" -type f | sort)
   done
 
+  # Update vendored skills (with disable filtering)
+  if [ $DRY_RUN -eq 0 ]; then
+    echo ""
+    echo "Updating skills..."
+    install_skills "$TOOLKIT_ROOT/core/skills" ".claude/skills"
+  fi
+
+  # Update external skills from config
+  local ext_count
+  ext_count=$(cfg_count "skills.install")
+  if [ "$ext_count" -gt 0 ] && [ $DRY_RUN -eq 0 ]; then
+    echo ""
+    echo "Updating external skills..."
+    local ei=0
+    while [ "$ei" -lt "$ext_count" ]; do
+      local src
+      src=$(cfg_get "skills.install.$ei.source")
+      if [ -n "$src" ]; then
+        local skill_name
+        skill_name=$(basename "${src#*:}" | tr '/' '\n' | tail -1)
+        local dest_skill="$CWD/.claude/skills/$skill_name"
+        # Skip if installed and user-modified
+        if [ -d "$dest_skill" ] && [ -f "$dest_skill/SOURCE" ]; then
+          local stored_cs current_cs
+          stored_cs=$(source_get "$dest_skill/SOURCE" "checksum")
+          current_cs=$(skill_checksum "$dest_skill")
+          if [ -n "$stored_cs" ] && [ "$stored_cs" != "$current_cs" ]; then
+            info "SKIP .claude/skills/$skill_name (locally modified)"
+            skipped=$((skipped + 1))
+          else
+            fetch_external_skill "$src" ".claude/skills" || info "ERROR $src — fetch failed (continuing)"
+          fi
+        else
+          fetch_external_skill "$src" ".claude/skills" || info "ERROR $src — fetch failed (continuing)"
+        fi
+      fi
+      ei=$((ei + 1))
+    done
+  fi
+
   [ $DRY_RUN -eq 0 ] && save_lock
 
   local prefix=""
   [ $DRY_RUN -eq 1 ] && prefix="Would: "
   echo ""
   echo "${prefix}${updated} updated, ${added} added, ${skipped} skipped (locally modified)"
+  echo ""
+}
+
+cmd_skills() {
+  local subcmd="${POSITIONALS[1]:-list}"
+  case "$subcmd" in
+    list) cmd_skills_list ;;
+    *)
+      error "Unknown skills subcommand: $subcmd"
+      echo "Usage: tricycle skills list" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_skills_list() {
+  detect_sha256
+  local skills_dir="$CWD/.claude/skills"
+  if [ ! -d "$skills_dir" ] || [ -z "$(ls -A "$skills_dir" 2>/dev/null)" ]; then
+    echo ""
+    echo "No skills installed. Run \`tricycle init\` to install defaults."
+    echo ""
+    return 0
+  fi
+
+  echo ""
+  echo "Skills installed in .claude/skills/:"
+  echo ""
+  printf "  %-20s %-42s %s\n" "Name" "Source" "Status"
+  printf "  %-20s %-42s %s\n" "────────────────────" "──────────────────────────────────────────" "──────────"
+
+  local total=0 modified=0 user_created=0
+  for skill_path in "$skills_dir"/*/; do
+    [ -d "$skill_path" ] || continue
+    local name source status
+    name=$(basename "$skill_path")
+    total=$((total + 1))
+
+    if [ -f "$skill_path/SOURCE" ]; then
+      source=$(source_get "$skill_path/SOURCE" "origin")
+      local stored_cs current_cs
+      stored_cs=$(source_get "$skill_path/SOURCE" "checksum")
+      current_cs=$(skill_checksum "$skill_path")
+      if [ -n "$stored_cs" ] && [ "$stored_cs" != "$current_cs" ]; then
+        status="modified"
+        modified=$((modified + 1))
+      else
+        status="clean"
+      fi
+    else
+      source="(user-created)"
+      status="—"
+      user_created=$((user_created + 1))
+    fi
+
+    # Truncate long source strings
+    if [ ${#source} -gt 40 ]; then
+      source="${source:0:37}..."
+    fi
+    printf "  %-20s %-42s %s\n" "$name" "$source" "$status"
+  done
+
+  echo ""
+  local summary="$total skills installed"
+  [ $modified -gt 0 ] && summary="$summary ($modified modified"
+  [ $user_created -gt 0 ] && { [ $modified -gt 0 ] && summary="$summary, " || summary="$summary ("; summary="$summary$user_created user-created"; }
+  { [ $modified -gt 0 ] || [ $user_created -gt 0 ]; } && summary="$summary)"
+  echo "  $summary"
   echo ""
 }
 
@@ -753,6 +879,7 @@ case "$COMMAND" in
   add)         cmd_add ;;
   assemble)    cmd_assemble ;;
   generate)    cmd_generate ;;
+  skills)      cmd_skills ;;
   update)      cmd_update ;;
   update-self) cmd_update_self ;;
   validate)    cmd_validate ;;

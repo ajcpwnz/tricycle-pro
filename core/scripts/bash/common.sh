@@ -338,7 +338,7 @@ parse_block_overrides() {
             in_step=0
         fi
         if [[ $in_step -eq 1 ]]; then
-            if [[ "$line" =~ ^[[:space:]]+(disable|enable|custom): ]]; then
+            if [[ "$line" =~ ^[[:space:]]+(disable|enable|custom|skills): ]]; then
                 in_section=$(printf '%s' "$line" | sed 's/^[[:space:]]*//' | sed 's/:.*//')
                 continue
             fi

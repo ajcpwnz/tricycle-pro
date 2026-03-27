@@ -121,4 +121,20 @@ describe('block assembly', () => {
     );
     assert.ok(files['trc.implement.md'].includes('Local Stack Testing'));
   });
+
+  it('skills config injects skill invocations into assembled command', () => {
+    const { files } = assemble(
+      'workflow:\n  blocks:\n    implement:\n      skills:\n        - code-reviewer\n        - debugging\n'
+    );
+    const impl = files['trc.implement.md'];
+    assert.ok(impl.includes('Skill Invocations'), 'should have Skill Invocations section');
+    assert.ok(impl.includes('code-reviewer'), 'should reference code-reviewer skill');
+    assert.ok(impl.includes('debugging'), 'should reference debugging skill');
+    assert.ok(impl.includes('.claude/skills/code-reviewer/SKILL.md'), 'should have existence check');
+  });
+
+  it('no skills section when none configured', () => {
+    const { files } = assemble('project:\n  name: test\n');
+    assert.ok(!files['trc.implement.md'].includes('Skill Invocations'), 'should not have Skill Invocations section');
+  });
 });

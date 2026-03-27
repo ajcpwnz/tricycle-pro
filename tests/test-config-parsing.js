@@ -69,6 +69,23 @@ describe('parse_block_overrides', () => {
     assert.equal(result, '');
   });
 
+  it('parses skills overrides', () => {
+    const tmpFile = path.join(os.tmpdir(), 'test-overrides-skills.yml');
+    fs.writeFileSync(tmpFile, [
+      'workflow:',
+      '  blocks:',
+      '    implement:',
+      '      skills:',
+      '        - code-reviewer',
+      '        - debugging',
+    ].join('\n'));
+
+    const result = runBash(`parse_block_overrides "${tmpFile}" implement`);
+    assert.ok(result.includes('skills=code-reviewer'));
+    assert.ok(result.includes('skills=debugging'));
+    fs.unlinkSync(tmpFile);
+  });
+
   it('returns empty for step with no overrides', () => {
     const tmpFile = path.join(os.tmpdir(), 'test-overrides-none.yml');
     fs.writeFileSync(tmpFile, [

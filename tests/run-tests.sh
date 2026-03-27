@@ -199,6 +199,76 @@ run_test "generate claude-md with monorepo preset exercises all sections" bash -
   grep -q "Worktree" CLAUDE.md
 '
 
+# ── Skills system ──
+
+echo ""
+echo "Skills system:"
+
+run_test "init installs all 5 vendored skills" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-single"
+  [ -d "$dir/.claude/skills/code-reviewer" ] &&
+  [ -d "$dir/.claude/skills/tdd" ] &&
+  [ -d "$dir/.claude/skills/debugging" ] &&
+  [ -d "$dir/.claude/skills/document-writer" ] &&
+  [ -d "$dir/.claude/skills/monorepo-structure" ]
+'
+
+run_test "each vendored skill has SKILL.md" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-single"
+  for s in code-reviewer tdd debugging document-writer monorepo-structure; do
+    [ -f "$dir/.claude/skills/$s/SKILL.md" ] || exit 1
+  done
+'
+
+run_test "each vendored skill has SOURCE file" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-single"
+  for s in code-reviewer tdd debugging document-writer monorepo-structure; do
+    [ -f "$dir/.claude/skills/$s/SOURCE" ] || exit 1
+  done
+'
+
+run_test "SOURCE file contains origin field" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-single"
+  grep -q "^origin: " "$dir/.claude/skills/code-reviewer/SOURCE"
+'
+
+run_test "SOURCE file contains checksum field" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-single"
+  grep -q "^checksum: " "$dir/.claude/skills/code-reviewer/SOURCE"
+'
+
+run_test "skills disable skips listed skills" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-disabled"
+  mkdir -p "$dir" && cd "$dir"
+  rm -rf .claude/skills
+  source "'"$REPO_ROOT"'/bin/lib/yaml_parser.sh"
+  source "'"$REPO_ROOT"'/bin/lib/helpers.sh"
+  detect_sha256
+  printf "project:\n  name: test\nskills:\n  disable:\n    - tdd\n    - document-writer\n" > tricycle.config.yml
+  CONFIG_DATA=$(parse_yaml tricycle.config.yml)
+  CWD="$PWD"
+  LOCK_FILES=""
+  install_skills "'"$REPO_ROOT"'/core/skills" ".claude/skills" >/dev/null 2>&1
+  [ ! -d ".claude/skills/tdd" ] && [ ! -d ".claude/skills/document-writer" ] &&
+  [ -d ".claude/skills/code-reviewer" ] && [ -d ".claude/skills/debugging" ]
+'
+
+run_test "skills list command exits 0" bash -c '
+  cd "'"$TMPDIR_INIT"'/init-single"
+  "'"$CLI"'" skills list >/dev/null 2>&1
+'
+
+run_test "skills list shows installed skills" bash -c '
+  cd "'"$TMPDIR_INIT"'/init-single"
+  output=$("'"$CLI"'" skills list 2>&1)
+  echo "$output" | grep -q "code-reviewer" &&
+  echo "$output" | grep -q "monorepo-structure"
+'
+
+run_test "help text includes skills command" bash -c '
+  "'"$CLI"'" --help 2>&1 | grep -q "skills list"
+'
+
 # ── Branch naming styles ──
 
 echo ""
