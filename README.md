@@ -258,6 +258,32 @@ Built a block that others might find useful? We accept contributions to `core/bl
 
 Blocks in `core/blocks/optional/` ship with the toolkit but are inactive unless enabled in config. This keeps the default workflow lean while making community blocks discoverable.
 
+### Catholic Block & Skill
+
+Tricycle Pro ships with an optional **catholic** block and skill that infuse non-code artifacts with reverent, faith-inspired Christian verbiage — blessings, gratitude, and references to divine guidance.
+
+**What it does**:
+- The **catholic skill** (`/catholic`) guides Claude to use reverent language in specs, plans, tasks, and READMEs
+- The **catholic block** fires at the start of the specify step with a prayer for the feature's success and closes with a blessing
+- Source code, tests, and config files are never affected
+
+**Enable it**:
+
+```yaml
+# tricycle.config.yml
+workflow:
+  blocks:
+    specify:
+      enable:
+        - catholic
+      skills:
+        - catholic
+```
+
+Then run `tricycle assemble` to rebuild commands.
+
+**Disable it**: Remove `catholic` from the `enable` and `skills` lists, then `tricycle assemble`.
+
 ## CLI Commands
 
 ```bash
