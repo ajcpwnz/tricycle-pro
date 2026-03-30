@@ -137,4 +137,39 @@ describe('block assembly', () => {
     const { files } = assemble('project:\n  name: test\n');
     assert.ok(!files['trc.implement.md'].includes('Skill Invocations'), 'should not have Skill Invocations section');
   });
+
+  it('qa.enabled: true includes qa-testing block in implement', () => {
+    const { files } = assemble('qa:\n  enabled: true\n');
+    const impl = files['trc.implement.md'];
+    assert.ok(impl.includes('QA Testing Gate'), 'should include QA Testing Gate section');
+    assert.ok(impl.includes('qa/ai-agent-instructions.md'), 'should reference instructions file');
+    assert.ok(impl.includes('HALT'), 'should include HALT directive');
+  });
+
+  it('qa.enabled: false does not include qa-testing block', () => {
+    const { files } = assemble('qa:\n  enabled: false\n');
+    assert.ok(!files['trc.implement.md'].includes('QA Testing Gate'), 'should not include QA Testing Gate');
+  });
+
+  it('qa section absent does not include qa-testing block', () => {
+    const { files } = assemble('project:\n  name: test\n');
+    assert.ok(!files['trc.implement.md'].includes('QA Testing Gate'), 'should not include QA Testing Gate');
+  });
+
+  it('manual enable works without qa.enabled', () => {
+    const { files } = assemble(
+      'workflow:\n  blocks:\n    implement:\n      enable:\n        - qa-testing\n'
+    );
+    assert.ok(files['trc.implement.md'].includes('QA Testing Gate'), 'should include QA Testing Gate via manual enable');
+  });
+
+  it('qa-testing block order is between task-execution and push-deploy', () => {
+    const { files } = assemble('qa:\n  enabled: true\n');
+    const impl = files['trc.implement.md'];
+    const taskExecIdx = impl.indexOf('Test/Lint Gate');
+    const qaIdx = impl.indexOf('QA Testing Gate');
+    const pushIdx = impl.indexOf('Push, PR & Deploy');
+    assert.ok(taskExecIdx < qaIdx, 'QA block should come after task-execution');
+    assert.ok(qaIdx < pushIdx, 'QA block should come before push-deploy');
+  });
 });
