@@ -27,8 +27,8 @@ If an MCP requires a service to be running (e.g., Docker, a dev server, the data
 start that service BEFORE attempting to use the MCP.
 
 ## Recent Changes
+- TRI-22-auto-worktree-cleanup: Auto worktree cleanup — replace reminder with automatic cleanup after PR merge
 - TRI-21-stealth-mode: Stealth mode — gitignore-based VCS exclusion for all tricycle artifacts
 - TRI-20-qa-testing-block: QA testing block — optional implement block, assembly auto-enable, learnings append
-- TRI-19-session-context-hook: Added Bash (POSIX-compatible, tested on macOS zsh) + None (pure bash, optional jq for JSON construction)
 
 ## Active Technologies
