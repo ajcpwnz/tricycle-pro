@@ -45,9 +45,13 @@ push:
   require_lint: false
   require_tests: true
   pr_target: "main"
-  auto_merge: false
+  auto_merge: true
   merge_strategy: "squash"
 
 constitution:
   root: ".trc/memory/constitution.md"
   per_app: false
+
+context:
+  session_start:
+    constitution: true

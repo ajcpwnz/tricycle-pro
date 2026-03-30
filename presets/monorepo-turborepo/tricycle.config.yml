@@ -80,3 +80,9 @@ constitution:
   root: ".trc/memory/constitution.md"
   per_app: true
   hierarchy: "app-overrides-root"
+
+context:
+  session_start:
+    constitution: true
+    # files:
+    #   - "docs/architecture.md"

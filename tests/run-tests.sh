@@ -223,6 +223,87 @@ run_test "generated CLAUDE.md has no leftover template markers" bash -c '
   ! grep -q "{{" CLAUDE.md
 '
 
+# ── SessionStart context hook ──
+
+echo ""
+echo "SessionStart context hook:"
+
+run_test "generated settings.json includes SessionStart hook" bash -c '
+  grep -q "SessionStart" "'"$TMPDIR_INIT"'/init-single/.claude/settings.json"
+'
+
+run_test "session-context hook is installed and executable" bash -c '
+  [ -x "'"$TMPDIR_INIT"'/init-single/.claude/hooks/session-context.sh" ]
+'
+
+run_test ".session-context.conf is generated with constitution path" bash -c '
+  [ -f "'"$TMPDIR_INIT"'/init-single/.claude/hooks/.session-context.conf" ] &&
+  grep -q "constitution" "'"$TMPDIR_INIT"'/init-single/.claude/hooks/.session-context.conf"
+'
+
+run_test "session-context hook outputs valid JSON for populated constitution" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-single"
+  printf "# My Constitution\n\nPrinciple I: Test everything.\n" > "$dir/.trc/memory/constitution.md"
+  output=$(cd "$dir" && echo "{}" | bash .claude/hooks/session-context.sh 2>/dev/null)
+  echo "$output" | grep -q "hookSpecificOutput"
+'
+
+run_test "session-context hook handles missing constitution gracefully" bash -c '
+  dir=$(mktemp -d)
+  mkdir -p "$dir/.claude/hooks"
+  printf "# Auto-generated\nnonexistent-file.md\n" > "$dir/.claude/hooks/.session-context.conf"
+  cd "$dir" && git init -q
+  output=$(echo "{}" | bash "'"$TMPDIR_INIT"'/init-single/.claude/hooks/session-context.sh" 2>/dev/null)
+  [ $? -eq 0 ] && [ -z "$output" ]
+  rm -rf "$dir"
+'
+
+run_test "session-context hook skips placeholder constitution" bash -c '
+  dir="'"$TMPDIR_INIT"'/init-single"
+  printf "# Project Constitution\n\n_Run \`/trc.constitution\` to populate this file._\n" > "$dir/.trc/memory/constitution.md"
+  output=$(cd "$dir" && echo "{}" | bash .claude/hooks/session-context.sh 2>/dev/null)
+  [ -z "$output" ]
+'
+
+run_test "session-context hook includes extra configured files" bash -c '
+  dir=$(mktemp -d) && cd "$dir" && git init -q
+  echo "test-ctx" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p docs
+  printf "# Architecture\n\nWe use microservices.\n" > docs/architecture.md
+  printf "# My Constitution\n\nPrinciple I: Test.\n" > .trc/memory/constitution.md
+  # Add extra file to config
+  printf "\ncontext:\n  session_start:\n    constitution: true\n    files:\n      - \"docs/architecture.md\"\n" >> tricycle.config.yml
+  "'"$CLI"'" generate settings >/dev/null 2>&1
+  output=$(echo "{}" | bash .claude/hooks/session-context.sh 2>/dev/null)
+  echo "$output" | grep -q "Architecture" && echo "$output" | grep -q "Constitution"
+  rm -rf "$dir"
+'
+
+run_test "session-context hook skips missing configured files" bash -c '
+  dir=$(mktemp -d) && cd "$dir" && git init -q
+  echo "test-ctx" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  printf "# My Constitution\n\nPrinciple I: Test.\n" > .trc/memory/constitution.md
+  printf "\ncontext:\n  session_start:\n    constitution: true\n    files:\n      - \"nonexistent.md\"\n" >> tricycle.config.yml
+  "'"$CLI"'" generate settings >/dev/null 2>&1
+  output=$(echo "{}" | bash .claude/hooks/session-context.sh 2>/dev/null)
+  echo "$output" | grep -q "Constitution"
+  rm -rf "$dir"
+'
+
+run_test "SessionStart hook has no matcher (fires on all events)" bash -c '
+  section=$(grep -A5 "SessionStart" "'"$TMPDIR_INIT"'/init-single/.claude/settings.json")
+  ! echo "$section" | grep -q "matcher"
+'
+
+run_test "SessionStart omitted when constitution false and no files" bash -c '
+  dir=$(mktemp -d) && cd "$dir" && git init -q
+  echo "test-ctx" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  printf "\ncontext:\n  session_start:\n    constitution: false\n" >> tricycle.config.yml
+  "'"$CLI"'" generate settings >/dev/null 2>&1
+  ! grep -q "SessionStart" .claude/settings.json
+  rm -rf "$dir"
+'
+
 # ── Skills system ──
 
 echo ""
