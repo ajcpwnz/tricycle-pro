@@ -36,3 +36,9 @@ branching:
 constitution:
   root: ".trc/memory/constitution.md"
   per_app: false
+
+context:
+  session_start:
+    constitution: true
+    # files:
+    #   - "docs/architecture.md"
