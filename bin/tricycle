@@ -67,7 +67,7 @@ Tricycle Pro ${VERSION:-} — AI-driven, spec-first development workflow toolkit
 Usage:
   tricycle init [--preset <name>]     Initialize project with Tricycle Pro
   tricycle add <module>               Add optional module (worktree, qa, ci-watch, mcp, memory)
-  tricycle generate <target>          Generate files (claude-md, settings, mcp)
+  tricycle generate <target>          Generate files (claude-md, settings, gitignore, mcp)
   tricycle update [--dry-run]         Update core files to latest version
   tricycle update-self                Update the tricycle CLI itself
   tricycle assemble [--dry-run]        Assemble commands from blocks based on workflow config
@@ -167,6 +167,9 @@ push:
   pr_target: $base_branch
   auto_merge: true
   merge_strategy: squash
+stealth:
+  enabled: false
+  ignore_target: exclude
 constitution:
   root: .trc/memory/constitution.md
   per_app: $per_app
@@ -176,6 +179,13 @@ YAML
     info "WRITE tricycle.config.yml"
 
     CONFIG_DATA=$(parse_yaml "$CWD/tricycle.config.yml")
+  fi
+
+  # When stealth mode is enabled, write ignore rules BEFORE installing files
+  local init_stealth
+  init_stealth=$(cfg_get "stealth.enabled") || true
+  if [ "$init_stealth" = "true" ]; then
+    cmd_generate_gitignore
   fi
 
   # Install core files
@@ -309,9 +319,10 @@ cmd_generate() {
   case "$target" in
     claude-md) cmd_generate_claude_md ;;
     settings) cmd_generate_settings ;;
+    gitignore) cmd_generate_gitignore ;;
     mcp) cmd_generate_mcp ;;
     *)
-      echo "Usage: tricycle generate <claude-md|settings|mcp>" >&2
+      echo "Usage: tricycle generate <claude-md|settings|gitignore|mcp>" >&2
       exit 1
       ;;
   esac
@@ -480,10 +491,93 @@ ENDJSON
   info "WRITE .claude/settings.json"
 }
 
+stealth_remove_block() {
+  local target="$1"
+  [ -f "$target" ] || return 0
+  if grep -q '# >>> tricycle stealth' "$target"; then
+    local tmp
+    tmp=$(mktemp)
+    awk '/^# >>> tricycle stealth/,/^# <<< tricycle stealth/{next} {print}' "$target" > "$tmp"
+    mv "$tmp" "$target"
+  fi
+}
+
 cmd_generate_gitignore() {
   local gitignore_path="$CWD/.gitignore"
-  local block
-  block=$(cat << 'BLOCK'
+  local git_dir exclude_path
+  git_dir="$(git -C "$CWD" rev-parse --git-dir 2>/dev/null)" || true
+  exclude_path="${git_dir:+$git_dir/info/exclude}"
+
+  local stealth_enabled
+  stealth_enabled=$(cfg_get "stealth.enabled") || true
+  local stealth_target
+  stealth_target=$(cfg_get_or "stealth.ignore_target" "exclude")
+
+  if [ "$stealth_enabled" = "true" ]; then
+    # ── Stealth mode ──
+    local target_path
+    if [ "$stealth_target" = "gitignore" ]; then
+      target_path="$gitignore_path"
+    else
+      if [ -z "$exclude_path" ]; then
+        error "stealth mode with exclude target requires a git repository"
+        return 1
+      fi
+      target_path="$exclude_path"
+    fi
+
+    # Ensure .git/info/ directory and exclude file exist
+    if [ -n "$exclude_path" ]; then
+      mkdir -p "$(dirname "$exclude_path")"
+      [ -f "$exclude_path" ] || touch "$exclude_path"
+    fi
+
+    # Remove any existing stealth block from BOTH targets (handles target switching)
+    stealth_remove_block "$gitignore_path"
+    if [ -n "$exclude_path" ]; then stealth_remove_block "$exclude_path"; fi
+
+    # Remove normal-mode block from .gitignore (stealth replaces it)
+    if [ -f "$gitignore_path" ] && grep -q '\.claude/\*' "$gitignore_path"; then
+      local tmp
+      tmp=$(mktemp)
+      awk '
+        /^# Claude Code —.*committed$/ { skip=1; next }
+        skip && /^\.tricycle\.lock$/ { skip=0; next }
+        skip { next }
+        { print }
+      ' "$gitignore_path" > "$tmp"
+      mv "$tmp" "$gitignore_path"
+    fi
+
+    # Write stealth block if not already present
+    local stealth_block
+    stealth_block=$(cat << 'STEALTH'
+
+# >>> tricycle stealth (do not edit this block)
+.claude/
+.trc/
+specs/
+tricycle.config.yml
+.tricycle.lock
+.mcp.json
+# <<< tricycle stealth
+STEALTH
+)
+
+    printf '%s\n' "$stealth_block" >> "$target_path"
+    if [ "$stealth_target" = "gitignore" ]; then
+      info "WRITE .gitignore (stealth mode)"
+    else
+      info "WRITE .git/info/exclude (stealth mode)"
+    fi
+  else
+    # ── Normal mode ──
+    # Remove any leftover stealth blocks (handles toggle-off)
+    stealth_remove_block "$gitignore_path"
+    if [ -n "$exclude_path" ]; then stealth_remove_block "$exclude_path"; fi
+
+    local block
+    block=$(cat << 'BLOCK'
 
 # Claude Code — keep settings.json, commands, hooks, skills committed
 .claude/*
@@ -497,14 +591,15 @@ cmd_generate_gitignore() {
 BLOCK
 )
 
-  if [ -f "$gitignore_path" ]; then
-    if ! grep -q '\.claude/\*' "$gitignore_path"; then
-      printf '%s\n' "$block" >> "$gitignore_path"
-      info "UPDATE .gitignore (appended .claude rules)"
+    if [ -f "$gitignore_path" ]; then
+      if ! grep -q '\.claude/\*' "$gitignore_path"; then
+        printf '%s\n' "$block" >> "$gitignore_path"
+        info "UPDATE .gitignore (appended .claude rules)"
+      fi
+    else
+      printf '%s\n' "$block" > "$gitignore_path"
+      info "WRITE .gitignore"
     fi
-  else
-    printf '%s\n' "$block" > "$gitignore_path"
-    info "WRITE .gitignore"
   fi
 }
 

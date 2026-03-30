@@ -55,7 +55,7 @@ cfg_has() {
 
 cfg_get_or() {
   local val
-  val=$(cfg_get "$1")
+  val=$(cfg_get "$1") || true
   if [ -n "$val" ]; then
     printf '%s' "$val"
   else

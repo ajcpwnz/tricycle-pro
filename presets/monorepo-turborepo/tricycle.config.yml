@@ -76,6 +76,10 @@ deploy:
 branching:
   style: feature-name
 
+stealth:
+  enabled: false
+  ignore_target: exclude
+
 constitution:
   root: ".trc/memory/constitution.md"
   per_app: true
