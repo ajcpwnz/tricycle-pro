@@ -197,6 +197,30 @@ collect_blocks_for_step() {
     # (Override application happens in assemble_step after collecting)
 }
 
+# Compute feature-flag-derived block enables.
+# Reads top-level config flags (e.g., qa.enabled) and returns enable= lines
+# for blocks that should be auto-enabled based on those flags.
+compute_feature_flag_enables() {
+    local step="$1"
+    local config_file="$2"
+
+    [[ ! -f "$config_file" ]] && return 0
+
+    if [[ "$step" == "implement" ]]; then
+        # qa.enabled: true → enable qa-testing block
+        local in_qa=0
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" =~ ^qa: ]]; then in_qa=1; continue; fi
+            if [[ $in_qa -eq 1 ]] && [[ "$line" =~ ^[a-z] ]] && [[ ! "$line" =~ ^[[:space:]] ]]; then
+                in_qa=0
+            fi
+            if [[ $in_qa -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+enabled:[[:space:]]*true ]]; then
+                printf 'enable=qa-testing\n'
+            fi
+        done < "$config_file"
+    fi
+}
+
 # Apply block overrides (disable/enable/custom) to collected blocks.
 # Takes collected blocks on stdin, outputs filtered blocks.
 apply_overrides() {
@@ -206,6 +230,13 @@ apply_overrides() {
 
     local overrides=""
     overrides=$(parse_block_overrides "$config_file" "$step")
+
+    # Merge feature-flag-derived enables
+    local flag_enables=""
+    flag_enables=$(compute_feature_flag_enables "$step" "$config_file")
+    if [[ -n "$flag_enables" ]]; then
+        overrides="${flag_enables}"$'\n'"${overrides}"
+    fi
 
     # Read all collected blocks into array
     local blocks=()
