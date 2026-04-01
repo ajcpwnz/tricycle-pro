@@ -400,6 +400,55 @@ context:
     files: []                     # additional files to inject
 ```
 
+## Local Config Overrides
+
+Create `tricycle.config.local.yml` in your project root to override a subset of config fields per-developer, without modifying the shared `tricycle.config.yml`.
+
+```yaml
+# tricycle.config.local.yml
+qa:
+  enabled: true
+
+push:
+  require_approval: false
+
+worktree:
+  enabled: true
+```
+
+### How It Works
+
+1. `load_config()` detects `tricycle.config.local.yml` and merges it over the base config at runtime
+2. Only whitelisted prefixes can be overridden: `push.`, `qa.`, `worktree.`, `workflow.blocks.`, `stealth.`
+3. Non-overridable keys (e.g., `project.name`) emit a warning and are ignored
+4. The override file is automatically gitignored in both normal and stealth modes
+
+### Assembly Two-Pass Strategy
+
+When an override file exists, `tricycle assemble` runs two passes:
+
+1. **Pass 1** (base config) generates `.claude/commands/` — committed, identical for all developers
+2. **Pass 2** (merged config) generates `.trc/local/commands/` — gitignored, reflects local overrides
+
+The session-context hook detects `.trc/local/commands/` and instructs Claude to prefer local command variants when available.
+
+### Overridable Fields
+
+| Prefix | Example Keys |
+|--------|-------------|
+| `push.` | `push.require_approval`, `push.require_tests` |
+| `qa.` | `qa.enabled`, `qa.suites` |
+| `worktree.` | `worktree.enabled`, `worktree.path_pattern` |
+| `workflow.blocks.` | `workflow.blocks.implement.enable` |
+| `stealth.` | `stealth.enabled` |
+
+### Graceful Degradation
+
+- Missing override file: no effect, no warning
+- Empty override file: no effect, no warning
+- Unreadable or invalid YAML: warning emitted, base config used
+- Non-overridable keys: per-key warning with list of valid sections
+
 ## Presets
 
 ```bash
