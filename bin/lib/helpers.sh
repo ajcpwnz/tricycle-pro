@@ -34,6 +34,149 @@ sha256_file() {
 
 CONFIG_DATA=""
 
+# Prefixes eligible for local override (whitelist)
+OVERRIDABLE_PREFIXES=(
+  "push."
+  "qa."
+  "worktree."
+  "workflow.blocks."
+  "stealth."
+)
+
+# merge_config_data BASE_DATA OVERRIDE_DATA
+# Merges two flat key=value datasets. Override scalars win.
+# Override arrays replace base arrays entirely (detected by numeric index).
+merge_config_data() {
+  local base_data="$1" override_data="$2"
+  [ -z "$override_data" ] && { printf '%s' "$base_data"; return; }
+
+  # Collect array prefixes from override (patterns like "prefix.N." or "prefix.N=")
+  local arr_prefixes=""
+  arr_prefixes=$(printf '%s\n' "$override_data" | sed -n 's/^\(.*\)\.[0-9][0-9]*[.=].*$/\1/p' | sort -u)
+
+  # Start with base data, stripping any keys that override will replace
+  local merged=""
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    local key="${line%%=*}"
+
+    # Check if this key is directly overridden (scalar)
+    if printf '%s\n' "$override_data" | grep -q "^${key}="; then
+      continue
+    fi
+
+    # Check if this key belongs to an array prefix being replaced
+    local dominated=0
+    if [ -n "$arr_prefixes" ]; then
+      while IFS= read -r prefix; do
+        [ -z "$prefix" ] && continue
+        case "$key" in
+          "${prefix}".*)  dominated=1; break ;;
+        esac
+      done <<< "$arr_prefixes"
+    fi
+
+    [ "$dominated" -eq 1 ] && continue
+    merged="${merged:+${merged}
+}${line}"
+  done <<< "$base_data"
+
+  # Append all override entries
+  if [ -n "$merged" ]; then
+    printf '%s\n%s' "$merged" "$override_data"
+  else
+    printf '%s' "$override_data"
+  fi
+}
+
+# validate_override OVERRIDE_DATA
+# Checks override keys against OVERRIDABLE_PREFIXES. Warns on non-overridable keys.
+# Prints only valid override lines to stdout.
+validate_override() {
+  local override_data="$1"
+  [ -z "$override_data" ] && return 0
+
+  local valid_lines=""
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    local key="${line%%=*}"
+    local allowed=0
+
+    for prefix in "${OVERRIDABLE_PREFIXES[@]}"; do
+      case "$key" in
+        "${prefix}"*) allowed=1; break ;;
+      esac
+    done
+
+    if [ "$allowed" -eq 1 ]; then
+      valid_lines="${valid_lines:+${valid_lines}
+}${line}"
+    else
+      echo "  Warning: '$key' cannot be overridden locally (shared team config). Overridable sections: push, qa, worktree, workflow.blocks, stealth." >&2
+    fi
+  done <<< "$override_data"
+
+  [ -n "$valid_lines" ] && printf '%s' "$valid_lines"
+  return 0
+}
+
+# flat_to_yaml FLAT_DATA
+# Reconstructs YAML from flat KEY=VALUE lines. Output is valid for parse_yaml() round-trip.
+flat_to_yaml() {
+  local flat_data="$1"
+  [ -z "$flat_data" ] && return 0
+
+  printf '%s\n' "$flat_data" | awk -F= '
+  {
+    key = $1
+    val = substr($0, length(key) + 2)
+
+    n = split(key, parts, ".")
+    # Determine indent level by walking parts
+    line = ""
+    depth = 0
+
+    for (i = 1; i <= n; i++) {
+      p = parts[i]
+      # Build the path up to this level
+      path = ""
+      for (j = 1; j <= i; j++) {
+        if (path != "") path = path SUBSEP
+        path = path parts[j]
+      }
+
+      if (i == n) {
+        # Leaf — check if parent was an array element
+        # If previous part is numeric, this is object inside array
+        indent = ""
+        for (d = 0; d < i - 1; d++) indent = indent "  "
+
+        # Check if this part is a numeric index (bare array value)
+        if (p ~ /^[0-9]+$/ && i == n) {
+          # bare array value: parent.N=val
+          printf "%s- %s\n", indent, val
+        } else {
+          printf "%s%s: %s\n", indent, p, val
+        }
+      } else {
+        # Check if we already printed this parent path
+        if (!(path in seen)) {
+          seen[path] = 1
+          indent = ""
+          for (d = 0; d < i - 1; d++) indent = indent "  "
+
+          if (p ~ /^[0-9]+$/) {
+            # Array element — print dash prefix
+            printf "%s-\n", indent
+          } else {
+            printf "%s%s:\n", indent, p
+          }
+        }
+      }
+    }
+  }'
+}
+
 load_config() {
   local config_path="$CWD/tricycle.config.yml"
   if [ ! -f "$config_path" ]; then
@@ -42,6 +185,33 @@ load_config() {
     exit 1
   fi
   CONFIG_DATA=$(parse_yaml "$config_path")
+
+  # Check for local override file
+  local override_path="$CWD/tricycle.config.local.yml"
+  if [ -f "$override_path" ]; then
+    if [ ! -r "$override_path" ]; then
+      echo "  Warning: tricycle.config.local.yml exists but is not readable. Using base config only." >&2
+      return 0
+    fi
+
+    local override_data
+    if ! override_data=$(parse_yaml "$override_path" 2>/dev/null); then
+      echo "  Warning: tricycle.config.local.yml has invalid YAML. Using base config only." >&2
+      return 0
+    fi
+
+    # Empty override file — nothing to merge
+    [ -z "$override_data" ] && return 0
+
+    # Validate and filter to overridable keys only
+    local valid_override
+    valid_override=$(validate_override "$override_data")
+
+    # Merge valid overrides into base config
+    if [ -n "$valid_override" ]; then
+      CONFIG_DATA=$(merge_config_data "$CONFIG_DATA" "$valid_override")
+    fi
+  fi
 }
 
 cfg_get() {

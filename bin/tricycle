@@ -558,6 +558,7 @@ cmd_generate_gitignore() {
 .trc/
 specs/
 tricycle.config.yml
+tricycle.config.local.yml
 .tricycle.lock
 .mcp.json
 # <<< tricycle stealth
@@ -588,6 +589,10 @@ STEALTH
 
 # Tricycle Pro lock
 .tricycle.lock
+
+# Tricycle local overrides (per-developer, never committed)
+tricycle.config.local.yml
+.trc/local/
 BLOCK
 )
 

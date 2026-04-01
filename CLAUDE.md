@@ -27,8 +27,10 @@ If an MCP requires a service to be running (e.g., Docker, a dev server, the data
 start that service BEFORE attempting to use the MCP.
 
 ## Recent Changes
+- TRI-23-local-config-overrides: Added Bash (3.2+ compatible, macOS default) + Node.js (for tests) + None new — uses existing `parse_yaml()`, `cfg_*()`, assembly scrip
 - TRI-22-auto-worktree-cleanup: Auto worktree cleanup — replace reminder with automatic cleanup after PR merge
 - TRI-21-stealth-mode: Stealth mode — gitignore-based VCS exclusion for all tricycle artifacts
-- TRI-20-qa-testing-block: QA testing block — optional implement block, assembly auto-enable, learnings append
 
 ## Active Technologies
+- Bash (3.2+ compatible, macOS default) + Node.js (for tests) + None new — uses existing `parse_yaml()`, `cfg_*()`, assembly scrip (TRI-23-local-config-overrides)
+- Filesystem — YAML config files, flat key-value in memory (TRI-23-local-config-overrides)

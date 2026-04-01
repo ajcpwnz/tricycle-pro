@@ -35,11 +35,42 @@ cmd_assemble() {
     blocks_dir="$TOOLKIT_ROOT/core/blocks"
   fi
 
+  # Pass 1: always assemble from base config (committed output)
   bash "$script_path" \
     --blocks-dir="$blocks_dir" \
     --output-dir="$output_dir" \
     --config="$CWD/tricycle.config.yml" \
     ${flags[@]+"${flags[@]}"}
+
+  # Pass 2: if local override exists, assemble from merged config (local overlay)
+  local override_path="$CWD/tricycle.config.local.yml"
+  if [ -f "$override_path" ]; then
+    local base_data override_data valid_override merged_data
+    base_data=$(parse_yaml "$CWD/tricycle.config.yml")
+
+    if override_data=$(parse_yaml "$override_path" 2>/dev/null) && [ -n "$override_data" ]; then
+      valid_override=$(validate_override "$override_data" 2>/dev/null)
+      if [ -n "$valid_override" ]; then
+        merged_data=$(merge_config_data "$base_data" "$valid_override")
+
+        local tmp_config
+        tmp_config=$(mktemp "${TMPDIR:-/tmp}/tricycle-merged-XXXXXX.yml")
+        flat_to_yaml "$merged_data" > "$tmp_config"
+
+        local local_output="$CWD/.trc/local/commands"
+        mkdir -p "$local_output"
+
+        echo "  Assembling local overlay from merged config..."
+        bash "$script_path" \
+          --blocks-dir="$blocks_dir" \
+          --output-dir="$local_output" \
+          --config="$tmp_config" \
+          ${flags[@]+"${flags[@]}"}
+
+        rm -f "$tmp_config"
+      fi
+    fi
+  fi
 
   echo ""
 }
