@@ -69,6 +69,37 @@ while IFS= read -r line || [ -n "$line" ]; do
 ${file_content}"
 done < "$CONF"
 
+# ─── Local config override detection ────────────────────────────────────────
+local_override="$REPO_ROOT/tricycle.config.local.yml"
+if [ -f "$local_override" ]; then
+  override_note="## Local Config Overrides Active
+
+A \`tricycle.config.local.yml\` file is present. Local overrides are being applied to your configuration."
+
+  local_commands="$REPO_ROOT/.trc/local/commands"
+  if [ -d "$local_commands" ] && ls "$local_commands"/*.md >/dev/null 2>&1; then
+    override_note="${override_note}
+
+Local command variants are available in \`.trc/local/commands/\`. These reflect your local config overrides. When a local variant exists, prefer it over the base version in \`.claude/commands/\`.
+
+Local commands:"
+    for f in "$local_commands"/*.md; do
+      override_note="${override_note}
+- $(basename "$f")"
+    done
+  fi
+
+  if [ -n "$content" ]; then
+    content="${content}
+
+---
+
+${override_note}"
+  else
+    content="$override_note"
+  fi
+fi
+
 # Nothing valid → exit silently
 [ -z "$content" ] && exit 0
 
