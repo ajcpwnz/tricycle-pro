@@ -73,6 +73,7 @@ Usage:
   tricycle assemble [--dry-run]        Assemble commands from blocks based on workflow config
   tricycle skills list                 List installed skills with source and status
   tricycle validate                   Validate configuration and installed files
+  tricycle hello-world                Print "Hello, world!"
 
 Options:
   --preset <name>     Use a preset configuration (monorepo-turborepo, nextjs-prisma, single-app)
@@ -1021,6 +1022,12 @@ cmd_update_self() {
   echo ""
 }
 
+# ─── Hello World ─────────────────────────────────────────────────────────────
+
+cmd_hello_world() {
+  echo "Hello, world!"
+}
+
 # ─── Dispatch ────────────────────────────────────────────────────────────────
 
 if [ -z "$COMMAND" ] || [ $HELP -eq 1 ]; then
@@ -1037,6 +1044,7 @@ case "$COMMAND" in
   update)      cmd_update ;;
   update-self) cmd_update_self ;;
   validate)    cmd_validate ;;
+  hello-world) cmd_hello_world ;;
   *)
     error "Unknown command: $COMMAND. Run \"tricycle --help\" for usage."
     exit 1
