@@ -27,9 +27,11 @@ If an MCP requires a service to be running (e.g., Docker, a dev server, the data
 start that service BEFORE attempting to use the MCP.
 
 ## Recent Changes
+- TRI-24-feature-status: Added Bash 3.2+ (macOS default) + None new — uses existing `json_builder.sh`, `helpers.sh`
 - TRI-25-hello-world: Added Bash 3.2+ (macOS default) + None new
 - TRI-23-local-config-overrides: Added Bash (3.2+ compatible, macOS default) + Node.js (for tests) + None new — uses existing `parse_yaml()`, `cfg_*()`, assembly scrip
 - TRI-22-auto-worktree-cleanup: Auto worktree cleanup — replace reminder with automatic cleanup after PR merge
 
 ## Active Technologies
-- Bash 3.2+ (macOS default) + None new (TRI-25-hello-world)
+- Bash 3.2+ (macOS default) + None new — uses existing `json_builder.sh`, `helpers.sh` (TRI-24-feature-status)
+- Filesystem (read-only scan of `specs/` directories) (TRI-24-feature-status)

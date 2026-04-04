@@ -511,6 +511,158 @@ run_test "without --no-checkout still checks out branch (backwards compat)" bash
   rm -rf "$dir"
 '
 
+# ── Status command ──
+
+echo ""
+echo "Status command:"
+
+run_test "status --help mentions status" bash -c '
+  "'"$CLI"'" --help 2>&1 | grep -q "tricycle status"
+'
+
+run_test "status shows table output for features at different stages" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "$CLI" init --preset single-app >/dev/null 2>&1
+
+  # Create features at different stages
+  mkdir -p specs/TRI-1-alpha
+  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
+
+  mkdir -p specs/TRI-2-beta
+  printf "# Spec\n" > specs/TRI-2-beta/spec.md
+  printf "# Plan\n" > specs/TRI-2-beta/plan.md
+  printf "# Tasks\n- [ ] T001 Do something\n" > specs/TRI-2-beta/tasks.md
+
+  mkdir -p specs/TRI-3-gamma
+  printf "# Spec\n" > specs/TRI-3-gamma/spec.md
+  printf "# Plan\n" > specs/TRI-3-gamma/plan.md
+  printf "# Tasks\n- [x] T001 Done\n" > specs/TRI-3-gamma/tasks.md
+
+  output=$("$CLI" status 2>&1)
+  echo "$output" | grep -q "TRI-1" &&
+  echo "$output" | grep -q "specify" &&
+  echo "$output" | grep -q "TRI-2" &&
+  echo "$output" | grep -q "tasks" &&
+  echo "$output" | grep -q "TRI-3" &&
+  echo "$output" | grep -q "done"
+  rm -rf "$dir"
+'
+
+run_test "status --json outputs valid parseable JSON" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/TRI-1-test
+  printf "# Spec\n" > specs/TRI-1-test/spec.md
+  output=$("'"$CLI"'" status --json 2>&1)
+  node -e "
+    const d = JSON.parse(process.argv[1]);
+    if (!Array.isArray(d)) process.exit(1);
+    if (d.length !== 1) process.exit(1);
+    if (d[0].id !== \"TRI-1\") process.exit(1);
+    if (d[0].stage !== \"specify\") process.exit(1);
+    if (typeof d[0].progress !== \"number\") process.exit(1);
+  " "$output"
+  rm -rf "$dir"
+'
+
+run_test "status --json returns empty array for no features" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs
+  rm -rf specs/*/
+  output=$("'"$CLI"'" status --json 2>&1)
+  [ "$output" = "[]" ]
+  rm -rf "$dir"
+'
+
+run_test "status filter by ID shows only matching feature" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/TRI-1-alpha specs/TRI-2-beta
+  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
+  printf "# Spec\n" > specs/TRI-2-beta/spec.md
+  output=$("'"$CLI"'" status TRI-1 2>&1)
+  echo "$output" | grep -q "alpha" &&
+  ! echo "$output" | grep -q "beta"
+  rm -rf "$dir"
+'
+
+run_test "status filter shows not-found message for unknown ID" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/TRI-1-alpha
+  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
+  output=$("'"$CLI"'" status TRI-999 2>&1)
+  echo "$output" | grep -q "No feature found matching TRI-999"
+  rm -rf "$dir"
+'
+
+run_test "status --json with filter returns filtered array" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/TRI-1-alpha specs/TRI-2-beta
+  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
+  printf "# Spec\n" > specs/TRI-2-beta/spec.md
+  output=$("'"$CLI"'" status TRI-1 --json 2>&1)
+  node -e "
+    const d = JSON.parse(process.argv[1]);
+    if (d.length !== 1) process.exit(1);
+    if (d[0].id !== \"TRI-1\") process.exit(1);
+  " "$output"
+  rm -rf "$dir"
+'
+
+run_test "status shows message for empty specs dir" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs
+  rm -rf specs/*/
+  output=$("'"$CLI"'" status 2>&1)
+  echo "$output" | grep -q "No features found"
+  rm -rf "$dir"
+'
+
+run_test "status handles feature dir with no artifacts (stage=empty)" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/orphaned-feature
+  output=$("'"$CLI"'" status 2>&1)
+  echo "$output" | grep -q "orphaned-feature" &&
+  echo "$output" | grep -q "empty"
+  rm -rf "$dir"
+'
+
+run_test "status handles non-standard dir names" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/my-custom-feature
+  printf "# Spec\n" > specs/my-custom-feature/spec.md
+  output=$("'"$CLI"'" status 2>&1)
+  echo "$output" | grep -q "my-custom-feature" &&
+  echo "$output" | grep -q "specify"
+  rm -rf "$dir"
+'
+
+run_test "status detects implement stage (some tasks checked)" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/TRI-1-wip
+  printf "# Tasks\n- [x] T001 Done\n- [ ] T002 Not done\n" > specs/TRI-1-wip/tasks.md
+  output=$("'"$CLI"'" status 2>&1)
+  echo "$output" | grep -q "implement"
+  rm -rf "$dir"
+'
+
 # ── Summary ──
 
 echo ""
