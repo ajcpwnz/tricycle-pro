@@ -259,26 +259,98 @@ On **any failure** during this workflow (push rejected, PR creation failed, merg
 - Suggest what the user can do to resolve the issue.
 
 
-## Worktree Cleanup Reminder
+## Worktree Cleanup
 
-After implementation is complete, lint/tests pass, and the user has approved the push:
+After the push-deploy block has confirmed the PR is merged, automatically clean up the worktree.
 
-**Do NOT clean up automatically.** Per the artifact cleanup rules, worktrees and spec artifacts MUST NOT be cleaned up until the PR is merged.
+**Prerequisites**: The PR MUST be confirmed merged before this block executes. If the merge has not happened, skip this block entirely.
 
-Instead, after the push is approved and PR is created, remind the user:
+### Detection
+
+Check if `.git` is a **file** (not a directory). If `.git` is a directory, you are in the main checkout — skip this block silently.
+
+### Safety Check
+
+Before cleanup, run `git status --porcelain` in the worktree. If there is any output (uncommitted changes), do NOT proceed with cleanup. Instead, warn the user:
 
 ```
-Worktree cleanup available after PR merge:
+Warning: Uncommitted changes detected in worktree. Skipping automatic cleanup.
+```
+
+Then fall back to printing the manual cleanup commands (see Fallback section below).
+
+### Automatic Cleanup
+
+Execute these steps in order. If any step fails, report the error and fall back to the manual reminder for remaining steps.
+
+1. **Capture context before leaving the worktree**:
+   - Worktree path: the current working directory
+   - Branch name: `git rev-parse --abbrev-ref HEAD`
+   - Main checkout path: run `git worktree list --porcelain`, take the first `worktree` line (this is always the main checkout)
+
+2. **Switch working context** to the main checkout directory. All subsequent commands run from there.
+
+3. **Fetch latest** to ensure the main branch is up to date:
+   ```
+   git fetch origin
+   git pull origin <base-branch>
+   ```
+   Where `<base-branch>` is `push.pr_target` from `tricycle.config.yml` (default: `main`).
+
+4. **Remove the worktree**:
+   ```
+   git worktree remove <worktree-path>
+   ```
+
+5. **Prune stale worktree references**:
+   ```
+   git worktree prune
+   ```
+
+6. **Delete the feature branch locally**:
+   ```
+   git branch -d <branch-name>
+   ```
+
+7. **Report success**:
+   ```
+   Worktree cleanup complete:
+     ✓ Removed worktree: <worktree-path>
+     ✓ Pruned stale references
+     ✓ Deleted branch: <branch-name>
+     ✓ Now on <base-branch> in <main-checkout-path>
+   ```
+
+### Fallback
+
+If any cleanup step fails, print the error and then display manual instructions for any remaining steps:
+
+```
+Automatic cleanup encountered an error: <error message>
+
+Manual cleanup commands:
+
+  # Switch to main checkout
+  cd <main-checkout-path>
 
   # Remove the worktree
-  git worktree remove ../[worktree-path]
+  git worktree remove <worktree-path>
 
   # Prune stale worktree references
   git worktree prune
 
-  # Optionally delete the feature branch (after merge)
-  git branch -d [branch-name]
+  # Delete the feature branch
+  git branch -d <branch-name>
 ```
 
-Only display this reminder if the current working directory is a worktree (`.git` is a file, not a directory). If already in the main checkout, skip this block silently.
+Do NOT halt the overall workflow on cleanup failure — cleanup is best-effort. The implementation is already complete and merged.
+
+
+## Skill Invocations
+
+The following skills are configured for the `implement` step. Invoke each one if installed; skip gracefully if not.
+
+- If `.claude/skills/code-reviewer/SKILL.md` exists, invoke `/code-reviewer`. If the skill is not installed, skip this invocation and continue.
+
+Context for invocation: 
 

@@ -43,7 +43,7 @@ drop_db() {
 remove_worktree() {
   local branch="$1"
   local worktree_path
-  worktree_path=$(git worktree list --porcelain | grep -A2 "branch refs/heads/$branch" | head -1 | sed 's/worktree //')
+  worktree_path=$(git worktree list --porcelain | grep -B2 "branch refs/heads/$branch" | head -1 | sed 's/worktree //')
 
   if [[ -z "$worktree_path" ]]; then
     echo "No worktree found for branch '$branch'"
@@ -63,7 +63,20 @@ remove_worktree() {
   drop_db "$db"
 
   # Remove worktree
-  git worktree remove "$worktree_path" --force 2>/dev/null || rm -rf "$worktree_path"
+  if ! git worktree remove "$worktree_path" --force 2>&1; then
+    echo "  git worktree remove failed, falling back to rm" >&2
+    rm -rf "$worktree_path"
+  fi
+
+  # Verify removal
+  if git worktree list --porcelain | grep -q "branch refs/heads/$branch"; then
+    echo "  Error: worktree for '$branch' still exists after removal attempt" >&2
+    return 1
+  fi
+  if [[ -d "$worktree_path" ]]; then
+    echo "  Error: directory '$worktree_path' still exists after removal attempt" >&2
+    return 1
+  fi
   echo "  Removed worktree: $worktree_path"
 
   # Delete the branch if it's fully merged

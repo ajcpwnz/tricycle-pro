@@ -411,3 +411,12 @@ After each validation iteration, update the checklist file with current pass/fai
 
 Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/trc.clarify` or `/trc.plan`).
 
+
+## Skill Invocations
+
+The following skills are configured for the `specify` step. Invoke each one if installed; skip gracefully if not.
+
+- If `.claude/skills/document-writer/SKILL.md` exists, invoke `/document-writer`. If the skill is not installed, skip this invocation and continue.
+
+Context for invocation: 
+

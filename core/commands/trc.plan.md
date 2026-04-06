@@ -109,3 +109,12 @@ Before proceeding, read `tricycle.config.yml` and check the `workflow.chain` con
 
 5. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
 
+
+## Skill Invocations
+
+The following skills are configured for the `plan` step. Invoke each one if installed; skip gracefully if not.
+
+- If `.claude/skills/document-writer/SKILL.md` exists, invoke `/document-writer`. If the skill is not installed, skip this invocation and continue.
+
+Context for invocation: 
+

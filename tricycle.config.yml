@@ -28,6 +28,8 @@ workflow:
       skills:
         - document-writer
     implement:
+      enable:
+        - worktree-cleanup
       skills:
         - code-reviewer
 
