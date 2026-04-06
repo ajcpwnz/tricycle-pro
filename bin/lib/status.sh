@@ -152,9 +152,11 @@ status_scan_worktrees() {
         fi
 
         if [ "$skip" = "0" ]; then
-          # Check if branch is already merged into base
+          # Check if branch is already merged into base (check remote ref first, fall back to local)
           local is_merged=0
-          if git branch --merged "$base_branch" 2>/dev/null | grep -q "^[[:space:]]*${worktree_branch}$"; then
+          if git branch --merged "origin/$base_branch" 2>/dev/null | grep -q "^[[:space:]]*${worktree_branch}$"; then
+            is_merged=1
+          elif git branch --merged "$base_branch" 2>/dev/null | grep -q "^[[:space:]]*${worktree_branch}$"; then
             is_merged=1
           fi
 
