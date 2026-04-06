@@ -126,11 +126,14 @@ status_scan_worktrees() {
     echo ""
   fi
 
-  # Read base branch from config, fall back to common defaults
+  # Read base branch from config: try base_branch first, then pr_target, fall back to main
   local base_branch="main"
   if [ -f "$CWD/tricycle.config.yml" ]; then
     local parsed
     parsed=$(grep -E '^\s+base_branch:' "$CWD/tricycle.config.yml" 2>/dev/null | head -1 | sed 's/.*base_branch:[[:space:]]*//' | tr -d '"'"'" | tr -d '[:space:]')
+    if [ -z "$parsed" ]; then
+      parsed=$(grep -E '^\s+pr_target:' "$CWD/tricycle.config.yml" 2>/dev/null | head -1 | sed 's/.*pr_target:[[:space:]]*//' | tr -d '"'"'" | tr -d '[:space:]')
+    fi
     [ -n "$parsed" ] && base_branch="$parsed"
   fi
 
