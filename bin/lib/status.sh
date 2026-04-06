@@ -93,6 +93,7 @@ status_render_bar() {
 status_scan() {
   local filter="${1:-}"
   local json_mode="${2:-0}"
+  local show_all="${3:-0}"
   local specs_dir="$CWD/specs"
 
   if [ ! -d "$specs_dir" ] || [ -z "$(ls -A "$specs_dir" 2>/dev/null)" ]; then
@@ -104,6 +105,12 @@ status_scan() {
       echo ""
     fi
     return 0
+  fi
+
+  # Build list of active worktree branch names
+  local worktree_branches=""
+  if [ "$show_all" != "1" ] && [ -z "$filter" ]; then
+    worktree_branches=$(git worktree list --porcelain 2>/dev/null | grep '^branch refs/heads/' | sed 's|^branch refs/heads/||')
   fi
 
   local found=0
@@ -127,6 +134,13 @@ status_scan() {
     # Apply filter
     if [ -n "$filter" ]; then
       if [ "$id" != "$filter" ] && [ "$dir_name" != "$filter" ]; then
+        continue
+      fi
+    fi
+
+    # Default: only show features with active worktrees
+    if [ "$show_all" != "1" ] && [ -z "$filter" ] && [ -n "$worktree_branches" ]; then
+      if ! echo "$worktree_branches" | grep -qx "$dir_name"; then
         continue
       fi
     fi
@@ -157,8 +171,12 @@ status_scan() {
   if [ "$json_mode" = "1" ]; then
     printf ']\n'
   else
-    if [ "$found" -eq 0 ] && [ -n "$filter" ]; then
-      echo "  No feature found matching $filter"
+    if [ "$found" -eq 0 ]; then
+      if [ -n "$filter" ]; then
+        echo "  No feature found matching $filter"
+      elif [ "$show_all" != "1" ]; then
+        echo "  No active worktrees. Use --all to show all features."
+      fi
     fi
     echo ""
   fi

@@ -539,7 +539,7 @@ run_test "status shows table output for features at different stages" bash -c '
   printf "# Plan\n" > specs/TRI-3-gamma/plan.md
   printf "# Tasks\n- [x] T001 Done\n" > specs/TRI-3-gamma/tasks.md
 
-  output=$("$CLI" status 2>&1)
+  output=$("$CLI" status --all 2>&1)
   echo "$output" | grep -q "TRI-1" &&
   echo "$output" | grep -q "specify" &&
   echo "$output" | grep -q "TRI-2" &&
@@ -555,7 +555,7 @@ run_test "status --json outputs valid parseable JSON" bash -c '
   echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
   mkdir -p specs/TRI-1-test
   printf "# Spec\n" > specs/TRI-1-test/spec.md
-  output=$("'"$CLI"'" status --json 2>&1)
+  output=$("'"$CLI"'" status --json --all 2>&1)
   node -e "
     const d = JSON.parse(process.argv[1]);
     if (!Array.isArray(d)) process.exit(1);
@@ -634,7 +634,7 @@ run_test "status handles feature dir with no artifacts (stage=empty)" bash -c '
   cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
   echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
   mkdir -p specs/orphaned-feature
-  output=$("'"$CLI"'" status 2>&1)
+  output=$("'"$CLI"'" status --all 2>&1)
   echo "$output" | grep -q "orphaned-feature" &&
   echo "$output" | grep -q "empty"
   rm -rf "$dir"
@@ -646,7 +646,7 @@ run_test "status handles non-standard dir names" bash -c '
   echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
   mkdir -p specs/my-custom-feature
   printf "# Spec\n" > specs/my-custom-feature/spec.md
-  output=$("'"$CLI"'" status 2>&1)
+  output=$("'"$CLI"'" status --all 2>&1)
   echo "$output" | grep -q "my-custom-feature" &&
   echo "$output" | grep -q "specify"
   rm -rf "$dir"
@@ -658,8 +658,34 @@ run_test "status detects implement stage (some tasks checked)" bash -c '
   echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
   mkdir -p specs/TRI-1-wip
   printf "# Tasks\n- [x] T001 Done\n- [ ] T002 Not done\n" > specs/TRI-1-wip/tasks.md
-  output=$("'"$CLI"'" status 2>&1)
+  output=$("'"$CLI"'" status --all 2>&1)
   echo "$output" | grep -q "implement"
+  rm -rf "$dir"
+'
+
+run_test "status default shows only features with active worktrees" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/TRI-1-alpha specs/TRI-2-beta
+  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
+  printf "# Spec\n" > specs/TRI-2-beta/spec.md
+  output=$("'"$CLI"'" status 2>&1)
+  echo "$output" | grep -q "No active worktrees" &&
+  ! echo "$output" | grep -q "TRI-1" &&
+  ! echo "$output" | grep -q "TRI-2"
+  rm -rf "$dir"
+'
+
+run_test "status --all shows features without worktrees" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
+  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
+  mkdir -p specs/TRI-1-alpha
+  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
+  output=$("'"$CLI"'" status --all 2>&1)
+  echo "$output" | grep -q "TRI-1" &&
+  echo "$output" | grep -q "specify"
   rm -rf "$dir"
 '
 

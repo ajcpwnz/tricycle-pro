@@ -36,6 +36,7 @@ DRY_RUN=0
 HELP=0
 SHOW_VERSION=0
 STATUS_JSON=0
+STATUS_ALL=0
 POSITIONALS=()
 
 while [ $# -gt 0 ]; do
@@ -46,6 +47,7 @@ while [ $# -gt 0 ]; do
       ;;
     --dry-run) DRY_RUN=1; shift ;;
     --json) STATUS_JSON=1; shift ;;
+    --all)  STATUS_ALL=1; shift ;;
     -h|--help) HELP=1; shift ;;
     -v|--version) SHOW_VERSION=1; shift ;;
     -*) error "Unknown option: $1"; exit 1 ;;
@@ -75,7 +77,7 @@ Usage:
   tricycle update-self                Update the tricycle CLI itself
   tricycle assemble [--dry-run]        Assemble commands from blocks based on workflow config
   tricycle skills list                 List installed skills with source and status
-  tricycle status [<filter>] [--json]  Show workflow progress for all features
+  tricycle status [<filter>] [--json] [--all]  Show workflow progress (default: active worktrees only)
   tricycle validate                   Validate configuration and installed files
   tricycle hello-world                Print "Hello, world!"
 
@@ -982,7 +984,7 @@ cmd_validate() {
 
 cmd_status() {
   local filter="${POSITIONALS[1]:-}"
-  status_scan "$filter" "$STATUS_JSON"
+  status_scan "$filter" "$STATUS_JSON" "$STATUS_ALL"
 }
 
 cmd_update_self() {
