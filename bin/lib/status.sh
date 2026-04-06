@@ -64,6 +64,7 @@ status_progress_for_stage() {
   case "$1" in
     empty)     echo 0 ;;
     active)    echo 0 ;;
+    stale)     echo 100 ;;
     specify)   echo 25 ;;
     plan)      echo 50 ;;
     tasks)     echo 75 ;;
@@ -151,8 +152,16 @@ status_scan_worktrees() {
         fi
 
         if [ "$skip" = "0" ]; then
+          # Check if branch is already merged into base
+          local is_merged=0
+          if git branch --merged "$base_branch" 2>/dev/null | grep -q "^[[:space:]]*${worktree_branch}$"; then
+            is_merged=1
+          fi
+
           local stage="active"
-          if [ -d "$specs_dir/$worktree_branch" ]; then
+          if [ "$is_merged" = "1" ]; then
+            stage="stale"
+          elif [ -d "$specs_dir/$worktree_branch" ]; then
             stage=$(status_detect_stage "$specs_dir/$worktree_branch")
           fi
 
