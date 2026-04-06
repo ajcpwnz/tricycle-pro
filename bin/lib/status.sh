@@ -134,10 +134,16 @@ status_scan_worktrees() {
     [ -n "$parsed" ] && base_branch="$parsed"
   fi
 
-  # Get merged PR branch names in one gh call (handles squash merges)
+  # Detect merged branches: gh handles squash merges, git branch --merged is the fallback
   local merged_branches=""
   if command -v gh >/dev/null 2>&1; then
     merged_branches=$(gh pr list --state merged --json headRefName --jq '.[].headRefName' --limit 200 2>/dev/null || true)
+  fi
+  if [ -z "$merged_branches" ]; then
+    merged_branches=$(git branch --merged "origin/$base_branch" 2>/dev/null | sed 's/^[[:space:]]*//' || true)
+    if [ -z "$merged_branches" ]; then
+      merged_branches=$(git branch --merged "$base_branch" 2>/dev/null | sed 's/^[[:space:]]*//' || true)
+    fi
   fi
 
   local worktree_path="" worktree_branch=""
