@@ -197,27 +197,56 @@ collect_blocks_for_step() {
     # (Override application happens in assemble_step after collecting)
 }
 
-# Compute feature-flag-derived block enables.
-# Reads top-level config flags (e.g., qa.enabled) and returns enable= lines
-# for blocks that should be auto-enabled based on those flags.
+# Compute feature-flag-derived block enables/disables.
+# Reads top-level config flags (e.g., worktree.enabled, qa.enabled) and returns
+# enable=/disable= lines so feature flags take precedence over workflow config.
 compute_feature_flag_enables() {
     local step="$1"
     local config_file="$2"
 
     [[ ! -f "$config_file" ]] && return 0
 
-    if [[ "$step" == "implement" ]]; then
-        # qa.enabled: true → enable qa-testing block
-        local in_qa=0
+    # Helper: read a top-level section's enabled flag (true/false/missing)
+    _flag_value() {
+        local section="$1"
+        local in_section=0
         while IFS= read -r line || [[ -n "$line" ]]; do
-            if [[ "$line" =~ ^qa: ]]; then in_qa=1; continue; fi
-            if [[ $in_qa -eq 1 ]] && [[ "$line" =~ ^[a-z] ]] && [[ ! "$line" =~ ^[[:space:]] ]]; then
-                in_qa=0
+            if [[ "$line" =~ ^${section}: ]]; then in_section=1; continue; fi
+            if [[ $in_section -eq 1 ]] && [[ "$line" =~ ^[a-z] ]] && [[ ! "$line" =~ ^[[:space:]] ]]; then
+                in_section=0
             fi
-            if [[ $in_qa -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+enabled:[[:space:]]*true ]]; then
-                printf 'enable=qa-testing\n'
+            if [[ $in_section -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+enabled:[[:space:]]*(.*) ]]; then
+                printf '%s' "${BASH_REMATCH[1]}"
+                return
             fi
         done < "$config_file"
+    }
+
+    # worktree.enabled gates worktree blocks
+    local wt_flag
+    wt_flag=$(_flag_value "worktree")
+    if [[ "$step" == "specify" ]]; then
+        if [[ "$wt_flag" == "true" ]]; then
+            printf 'enable=worktree-setup\n'
+        elif [[ "$wt_flag" == "false" ]]; then
+            printf 'disable=worktree-setup\n'
+        fi
+    fi
+    if [[ "$step" == "implement" ]]; then
+        if [[ "$wt_flag" == "true" ]]; then
+            printf 'enable=worktree-cleanup\n'
+        elif [[ "$wt_flag" == "false" ]]; then
+            printf 'disable=worktree-cleanup\n'
+        fi
+
+        # qa.enabled gates qa-testing block
+        local qa_flag
+        qa_flag=$(_flag_value "qa")
+        if [[ "$qa_flag" == "true" ]]; then
+            printf 'enable=qa-testing\n'
+        elif [[ "$qa_flag" == "false" ]]; then
+            printf 'disable=qa-testing\n'
+        fi
     fi
 }
 

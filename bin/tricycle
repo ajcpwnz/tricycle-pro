@@ -410,16 +410,13 @@ cmd_generate_settings() {
   # Build hooks JSON
   local pre_hooks="" post_hooks=""
 
-  # block-spec-in-main (always)
-  pre_hooks='
+  # worktree guard hooks (only when worktree enabled)
+  if [ "$(cfg_get "worktree.enabled")" = "true" ]; then
+    pre_hooks='
       {
         "matcher": "Write|Edit",
         "hooks": [{"type": "command", "command": ".claude/hooks/block-spec-in-main.sh", "timeout": 5}]
-      }'
-
-  # block-branch-in-main (if worktree enabled)
-  if [ "$(cfg_get "worktree.enabled")" = "true" ]; then
-    pre_hooks="${pre_hooks},"$'\n'"      "'
+      },
       {
         "matcher": "Bash",
         "hooks": [{"type": "command", "command": ".claude/hooks/block-branch-in-main.sh", "timeout": 5}]
