@@ -27,10 +27,10 @@ If an MCP requires a service to be running (e.g., Docker, a dev server, the data
 start that service BEFORE attempting to use the MCP.
 
 ## Recent Changes
+- TRI-28-trc-review-command: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). No new runtime languages. + Existing in-repo helpers only — `bin/lib/helpers.sh`, `bin/lib/yaml_parser.sh`, `bin/lib/common.sh`, `core/scripts/bash/json_builder.sh`. External CLI: `gh` (GitHub CLI, user-provided, authenticated). Agent-side tool: Claude Code's `WebFetch` (for remote sources).
 - TRI-27-trc-chain-orchestrator: Added Bash 3.2+ (macOS default); Node.js (tests only, via `node --test`) + Existing `core/scripts/bash/common.sh`, `json_builder.sh`, `helpers.sh`; Linear MCP server (runtime, agent-side); Claude Code's `Agent` + `SendMessage` tools (runtime, agent-side)
 - TRI-26-worktree-provisioning: Added Bash 3.2+ (macOS default), Node.js (tests only) + None new — reuses existing `common.sh` helpers, `json_builder.sh` patterns, and the in-repo YAML parsing style already used by `parse_chain_config` / `parse_block_overrides`
-- TRI-24-feature-status: Added Bash 3.2+ (macOS default) + None new — uses existing `json_builder.sh`, `helpers.sh`
 
 ## Active Technologies
-- Bash 3.2+ (macOS default); Node.js (tests only, via `node --test`) + Existing `core/scripts/bash/common.sh`, `json_builder.sh`, `helpers.sh`; Linear MCP server (runtime, agent-side); Claude Code's `Agent` + `SendMessage` tools (runtime, agent-side) (TRI-27-trc-chain-orchestrator)
-- JSON files on the filesystem under `specs/.chain-runs/<run-id>/state.json`. No database. Epic brief as adjacent markdown file. (TRI-27-trc-chain-orchestrator)
+- Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). No new runtime languages. + Existing in-repo helpers only — `bin/lib/helpers.sh`, `bin/lib/yaml_parser.sh`, `bin/lib/common.sh`, `core/scripts/bash/json_builder.sh`. External CLI: `gh` (GitHub CLI, user-provided, authenticated). Agent-side tool: Claude Code's `WebFetch` (for remote sources). (TRI-28-trc-review-command)
+- Filesystem only. Markdown reports under `docs/reviews/`; remote-source cache under `.trc/cache/review-sources/<sha256>.md`. No database. No migrations. (TRI-28-trc-review-command)

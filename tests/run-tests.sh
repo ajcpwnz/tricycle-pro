@@ -977,6 +977,18 @@ run_test "specs/.chain-runs/ is gitignored" bash -c '
   cd "'"$REPO_ROOT"'" && grep -q "specs/.chain-runs/" .gitignore
 '
 
+# ── trc.review (TRI-28) ──
+
+echo ""
+echo "trc.review (TRI-28):"
+
+run_test "trc.review structural smoke tests (tests/test-trc-review.sh)" \
+  bash "$REPO_ROOT/tests/test-trc-review.sh"
+
+run_test "trc.review node unit tests (tests/test-trc-review-cache.js)" bash -c '
+  cd "'"$REPO_ROOT"'" && node --test tests/test-trc-review-cache.js >/dev/null 2>&1
+'
+
 # ── Summary ──
 
 echo ""

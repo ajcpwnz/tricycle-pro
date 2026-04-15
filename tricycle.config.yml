@@ -32,6 +32,18 @@ workflow:
         - worktree-cleanup
       skills:
         - code-reviewer
+    review:
+      skills: []
+
+review:
+  profiles:
+    - quality
+    - style
+    - security
+    - complexity
+  sources: []
+  report_dir: docs/reviews
+  post_to_pr: false
 
 worktree:
   enabled: false
