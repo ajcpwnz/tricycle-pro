@@ -1,14 +1,27 @@
 #!/usr/bin/env bash
 
+# Exit codes reserved for the --provision-worktree pipeline (see TRI-26):
+#   10 = .trc/ copy into worktree failed
+#   11 = package-manager install failed (or binary not on PATH)
+#   12 = worktree.setup_script path does not exist in worktree root
+#   13 = worktree.setup_script is not executable
+#   14 = worktree.setup_script exited non-zero
+#   15 = one or more worktree.env_copy paths missing after setup
+# These codes must not be reused for anything else.
+
 set -e
 
 JSON_MODE=false
 NO_CHECKOUT=false
+PROVISION_WORKTREE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
 STYLE=""
 ISSUE_ID=""
 ISSUE_PREFIX=""
+PACKAGE_MANAGER="npm"
+SETUP_SCRIPT=""
+ENV_COPY_ITEMS=""  # newline-separated
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -19,6 +32,10 @@ while [ $i -le $# ]; do
             ;;
         --no-checkout)
             NO_CHECKOUT=true
+            ;;
+        --provision-worktree)
+            PROVISION_WORKTREE=true
+            NO_CHECKOUT=true  # provisioning owns worktree creation; main checkout stays put
             ;;
         --short-name)
             if [ $((i + 1)) -gt $# ]; then
@@ -87,17 +104,19 @@ while [ $i -le $# ]; do
             ISSUE_PREFIX="$next_arg"
             ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--style <style>] [--issue <id>] [--prefix <prefix>] [--no-checkout] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--style <style>] [--issue <id>] [--prefix <prefix>] [--no-checkout] [--provision-worktree] <feature_description>"
             echo ""
             echo "Options:"
-            echo "  --json              Output in JSON format"
-            echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
-            echo "  --number N          Specify branch number manually (overrides auto-detection, ordered style only)"
-            echo "  --style <style>     Branch naming style: feature-name, issue-number, ordered (default: ordered)"
-            echo "  --issue <id>        Issue identifier for issue-number style (e.g., TRI-042)"
-            echo "  --prefix <prefix>   Issue prefix for extraction from description (e.g., TRI)"
-            echo "  --no-checkout       Create branch without checking it out (for worktree workflows)"
-            echo "  --help, -h          Show this help message"
+            echo "  --json                Output in JSON format"
+            echo "  --short-name <name>   Provide a custom short name (2-4 words) for the branch"
+            echo "  --number N            Specify branch number manually (overrides auto-detection, ordered style only)"
+            echo "  --style <style>       Branch naming style: feature-name, issue-number, ordered (default: ordered)"
+            echo "  --issue <id>          Issue identifier for issue-number style (e.g., TRI-042)"
+            echo "  --prefix <prefix>     Issue prefix for extraction from description (e.g., TRI)"
+            echo "  --no-checkout         Create branch without checking it out (for worktree workflows)"
+            echo "  --provision-worktree  Create worktree, copy .trc/, install deps, run worktree.setup_script, and"
+            echo "                        verify worktree.env_copy paths (implies --no-checkout). See TRI-26."
+            echo "  --help, -h            Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add dark mode toggle' --style feature-name --short-name 'dark-mode'"
@@ -361,6 +380,111 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
 
+# Read project.name from tricycle.config.yml (needed for worktree path).
+# Minimal single-purpose parse; only used when PROVISION_WORKTREE=true.
+read_project_name() {
+    local config_file="$1"
+    [ -f "$config_file" ] || return 0
+    awk '
+        /^project:/ { in_p=1; next }
+        /^[a-zA-Z]/ && !/^[[:space:]]/ { in_p=0 }
+        in_p && /^[[:space:]]+name:/ {
+            sub(/^[[:space:]]+name:[[:space:]]*/, "")
+            gsub(/^"|"$/, "")
+            gsub(/^'\''|'\''$/, "")
+            sub(/[[:space:]]*$/, "")
+            print
+            exit
+        }
+    ' "$config_file"
+}
+
+# Full --provision-worktree pipeline. Reserved exit codes 10-15 (see header).
+# Arguments:
+#   $1 = worktree absolute path
+#   $2 = main checkout .trc/ absolute path
+#   $3 = package_manager
+#   $4 = setup_script (may be empty)
+#   $5 = env_copy newline-separated list (may be empty)
+provision_worktree() {
+    local worktree_path="$1"
+    local main_trc_source="$2"
+    local pkg_mgr="$3"
+    local setup_script="$4"
+    local env_copy="$5"
+
+    # Step 1: copy .trc/ into the worktree (idempotent).
+    if [ ! -e "$worktree_path/.trc" ]; then
+        if ! cp -R "$main_trc_source" "$worktree_path/.trc" 2>/tmp/.trc_cp_err_$$; then
+            local reason
+            reason=$(cat /tmp/.trc_cp_err_$$ 2>/dev/null || true)
+            rm -f /tmp/.trc_cp_err_$$
+            >&2 echo "Error: failed to copy .trc/ into worktree at $worktree_path: ${reason:-unknown reason}"
+            exit 10
+        fi
+        rm -f /tmp/.trc_cp_err_$$
+    fi
+
+    # Step 2: package-manager install.
+    if ! command -v "$pkg_mgr" >/dev/null 2>&1; then
+        >&2 echo "Error: package manager '$pkg_mgr' not found on PATH"
+        exit 11
+    fi
+    local install_rc=0
+    set +e
+    ( cd "$worktree_path" && "$pkg_mgr" install </dev/null )
+    install_rc=$?
+    set -e
+    if [ "$install_rc" -ne 0 ]; then
+        >&2 echo "Error: '$pkg_mgr install' failed with exit $install_rc in $worktree_path"
+        exit 11
+    fi
+
+    # Step 3: worktree.setup_script, if set.
+    if [ -n "$setup_script" ]; then
+        local script_abs="$worktree_path/$setup_script"
+        if [ ! -e "$script_abs" ]; then
+            >&2 echo "Error: worktree.setup_script '$setup_script' does not exist in worktree root"
+            exit 12
+        fi
+        if [ ! -x "$script_abs" ]; then
+            >&2 echo "Error: worktree.setup_script '$setup_script' is not executable"
+            exit 13
+        fi
+        local script_rc=0
+        set +e
+        ( cd "$worktree_path" && "./$setup_script" </dev/null )
+        script_rc=$?
+        set -e
+        if [ "$script_rc" -ne 0 ]; then
+            >&2 echo "Error: worktree.setup_script '$setup_script' exited $script_rc"
+            exit 14
+        fi
+    fi
+
+    # Step 4: verify every env_copy path exists under worktree root.
+    if [ -n "$env_copy" ]; then
+        local missing=""
+        local item
+        printf '%s' "$env_copy" | while IFS= read -r item; do
+            [ -z "$item" ] && continue
+            if [ ! -e "$worktree_path/$item" ]; then
+                printf '%s\n' "$item"
+            fi
+        done > /tmp/.trc_missing_$$
+        missing=$(cat /tmp/.trc_missing_$$)
+        rm -f /tmp/.trc_missing_$$
+        if [ -n "$missing" ]; then
+            >&2 echo "Error: worktree.env_copy paths missing after setup:"
+            printf '%s\n' "$missing" | while IFS= read -r item; do
+                [ -z "$item" ] && continue
+                >&2 echo "  - $item"
+            done
+            exit 15
+        fi
+    fi
+}
+
 if [ "$HAS_GIT" = true ]; then
     if [ "$NO_CHECKOUT" = true ]; then
         if ! git branch "$BRANCH_NAME" 2>/dev/null; then
@@ -389,8 +513,59 @@ fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 SPEC_FILE="$FEATURE_DIR/spec.md"
+WORKTREE_PATH=""
 
-if [ "$NO_CHECKOUT" = false ]; then
+if [ "$PROVISION_WORKTREE" = true ]; then
+    if [ "$HAS_GIT" != true ]; then
+        >&2 echo "Error: --provision-worktree requires a git repository"
+        exit 1
+    fi
+
+    # Parse provisioning config from tricycle.config.yml
+    CONFIG_FILE="$REPO_ROOT/tricycle.config.yml"
+    PROJECT_NAME=$(read_project_name "$CONFIG_FILE")
+    if [ -z "$PROJECT_NAME" ]; then
+        PROJECT_NAME=$(basename "$REPO_ROOT")
+    fi
+
+    # Collect provisioning config
+    ENV_COPY_LINES=""
+    while IFS= read -r cfg_line; do
+        case "$cfg_line" in
+            package_manager=*) PACKAGE_MANAGER="${cfg_line#package_manager=}" ;;
+            setup_script=*)    SETUP_SCRIPT="${cfg_line#setup_script=}" ;;
+            env_copy=*)        ENV_COPY_LINES="${ENV_COPY_LINES}${cfg_line#env_copy=}"$'\n' ;;
+        esac
+    done < <(parse_worktree_config "$CONFIG_FILE")
+
+    # Compute worktree path: ../{project.name}-{BRANCH_NAME}
+    REPO_PARENT=$(dirname "$REPO_ROOT")
+    WORKTREE_PATH="$REPO_PARENT/${PROJECT_NAME}-${BRANCH_NAME}"
+
+    if [ -e "$WORKTREE_PATH" ]; then
+        >&2 echo "Error: worktree path '$WORKTREE_PATH' already exists"
+        exit 1
+    fi
+
+    if ! git worktree add "$WORKTREE_PATH" "$BRANCH_NAME" >/dev/null 2>&1; then
+        >&2 echo "Error: 'git worktree add $WORKTREE_PATH $BRANCH_NAME' failed"
+        exit 1
+    fi
+
+    provision_worktree "$WORKTREE_PATH" "$REPO_ROOT/.trc" "$PACKAGE_MANAGER" "$SETUP_SCRIPT" "$ENV_COPY_LINES"
+
+    # Create spec dir and copy template INSIDE the worktree
+    FEATURE_DIR="$WORKTREE_PATH/specs/$BRANCH_NAME"
+    SPEC_FILE="$FEATURE_DIR/spec.md"
+    mkdir -p "$FEATURE_DIR"
+    TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
+    if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
+        cp "$TEMPLATE" "$SPEC_FILE"
+    else
+        echo "Warning: Spec template not found; created empty spec file" >&2
+        touch "$SPEC_FILE"
+    fi
+elif [ "$NO_CHECKOUT" = false ]; then
     mkdir -p "$FEATURE_DIR"
 
     TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
@@ -407,17 +582,35 @@ printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 
 if $JSON_MODE; then
     if command -v jq >/dev/null 2>&1; then
-        jq -cn \
-            --arg branch_name "$BRANCH_NAME" \
-            --arg spec_file "$SPEC_FILE" \
-            --arg feature_num "$FEATURE_NUM" \
-            '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num}'
+        if [ "$PROVISION_WORKTREE" = true ]; then
+            jq -cn \
+                --arg branch_name "$BRANCH_NAME" \
+                --arg spec_file "$SPEC_FILE" \
+                --arg feature_num "$FEATURE_NUM" \
+                --arg worktree_path "$WORKTREE_PATH" \
+                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,WORKTREE_PATH:$worktree_path}'
+        else
+            jq -cn \
+                --arg branch_name "$BRANCH_NAME" \
+                --arg spec_file "$SPEC_FILE" \
+                --arg feature_num "$FEATURE_NUM" \
+                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num}'
+        fi
     else
-        printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
+        if [ "$PROVISION_WORKTREE" = true ]; then
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","WORKTREE_PATH":"%s"}\n' \
+                "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "$WORKTREE_PATH")"
+        else
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' \
+                "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
+        fi
     fi
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
+    if [ "$PROVISION_WORKTREE" = true ]; then
+        echo "WORKTREE_PATH: $WORKTREE_PATH"
+    fi
     printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
 fi
