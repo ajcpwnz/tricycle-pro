@@ -73,26 +73,15 @@ The script auto-detects the next sequential number. Branch name will be `###-<sl
 
 If `WORKTREE_MODE=needed` (set by the worktree-setup block above):
 
-1. **Add `--no-checkout` to the script invocation from Step 2.** This creates the branch without switching to it and without creating the spec directory or template file. The JSON output still contains BRANCH_NAME, SPEC_FILE, and FEATURE_NUM.
+1. **Add `--provision-worktree` to the script invocation from Step 2** (it implies `--no-checkout`). This one flag tells `create-new-feature.sh` to create the branch, create the worktree at `../{project.name}-{BRANCH_NAME}`, copy `.trc/` into the worktree, run `{project.package_manager} install` inside the worktree, execute `worktree.setup_script` if configured, verify every path in `worktree.env_copy` exists, and finally create `specs/<BRANCH_NAME>/spec.md` from the template — all as a single atomic operation.
 
-2. **After parsing the JSON output**, create the worktree using the branch name:
-   ```bash
-   git worktree add ../{project}-{BRANCH_NAME} {BRANCH_NAME}
-   ```
-   Where `{project}` is `project.name` from `tricycle.config.yml`.
+2. **Parse the JSON output.** When `--provision-worktree` is set, the JSON includes a new key `WORKTREE_PATH` alongside `BRANCH_NAME`, `SPEC_FILE`, and `FEATURE_NUM`. `SPEC_FILE` is absolute and resolves inside the worktree.
 
-3. **Copy `.trc/`** from the main checkout to the worktree if it does not exist (it is typically gitignored):
-   ```bash
-   cp -r /path/to/main/.trc /path/to/worktree/.trc
-   ```
+3. **Change your working context to `WORKTREE_PATH`.** All subsequent operations MUST happen in the worktree.
 
-4. **Change your working context to the worktree directory.** All subsequent operations MUST happen in the worktree.
+**Do NOT** manually run `git worktree add`, `cp -r .trc`, `mkdir -p specs/...`, `cp spec-template.md`, or any package-manager install command in this block — `--provision-worktree` owns all of those steps so they cannot be partially skipped.
 
-5. **Create the spec directory and copy the template** inside the worktree:
-   ```bash
-   mkdir -p specs/{BRANCH_NAME}
-   cp .trc/templates/spec-template.md specs/{BRANCH_NAME}/spec.md
-   ```
+If any provisioning sub-step fails, `create-new-feature.sh` exits non-zero with a reserved code (10 = .trc copy, 11 = install, 12 = setup_script missing, 13 = setup_script not executable, 14 = setup_script non-zero, 15 = env_copy path missing). Report the error verbatim to the user and stop — do NOT attempt to proceed past a failed provisioning step.
 
 If `WORKTREE_MODE` is not set (worktree-setup block is not active), skip this step — the script already handled checkout, spec directory, and template in Step 2.
 
@@ -102,4 +91,4 @@ Load `.trc/templates/spec-template.md` to understand required sections.
 
 **NOTE:**
 - Without worktree mode: The script creates and checks out the new branch and initializes the spec file.
-- With worktree mode (`--no-checkout`): The script only creates the branch and outputs JSON. The spec directory, template copy, and worktree are set up in Step 2b.
+- With worktree mode (`--provision-worktree`): The script creates the branch, creates and provisions the worktree, and initializes the spec file inside the worktree. All spec authoring happens inside `WORKTREE_PATH`.

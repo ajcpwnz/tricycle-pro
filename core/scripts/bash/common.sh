@@ -338,7 +338,7 @@ parse_block_overrides() {
             in_step=0
         fi
         if [[ $in_step -eq 1 ]]; then
-            if [[ "$line" =~ ^[[:space:]]+(disable|enable|custom|skills): ]]; then
+            if [[ "$line" =~ ^[[:space:]]+(disable|enable|custom): ]]; then
                 in_section=$(printf '%s' "$line" | sed 's/^[[:space:]]*//' | sed 's/:.*//')
                 continue
             fi
@@ -466,4 +466,99 @@ except Exception:
     # Return 1 so callers can distinguish "not found" from "found".
     # Callers running under set -e should use: TEMPLATE=$(resolve_template ...) || true
     return 1
+}
+
+# Parse worktree provisioning config from tricycle.config.yml.
+# Emits KEY=VALUE lines on stdout:
+#   package_manager=<value>   (always emitted; defaults to "npm")
+#   setup_script=<value>      (emitted only when set; absent => no-op)
+#   env_copy=<path>           (emitted once per list item; absent => no-op)
+# Callers should read line-by-line; order of keys is stable.
+parse_worktree_config() {
+    local config_file="$1"
+
+    local package_manager=""
+    local setup_script=""
+    # env_copy items are collected as newline-separated in a single string so we
+    # can print them at the end without relying on arrays (Bash 3 compatible).
+    local env_copy_lines=""
+
+    if [[ ! -f "$config_file" ]]; then
+        echo "package_manager=npm"
+        return 0
+    fi
+
+    local in_project=0
+    local in_worktree=0
+    local in_env_copy=0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Top-level section detection
+        if [[ "$line" =~ ^project: ]]; then
+            in_project=1; in_worktree=0; in_env_copy=0; continue
+        fi
+        if [[ "$line" =~ ^worktree: ]]; then
+            in_project=0; in_worktree=1; in_env_copy=0; continue
+        fi
+        if [[ "$line" =~ ^[a-zA-Z] ]] && [[ ! "$line" =~ ^[[:space:]] ]]; then
+            in_project=0; in_worktree=0; in_env_copy=0
+        fi
+
+        if [[ $in_project -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+package_manager: ]]; then
+            package_manager=$(printf '%s' "$line" | sed 's/^[[:space:]]*package_manager:[[:space:]]*//' | sed 's/^"//;s/"$//' | sed "s/^'//;s/'$//" | sed 's/[[:space:]]*$//')
+        fi
+
+        if [[ $in_worktree -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+setup_script: ]]; then
+            setup_script=$(printf '%s' "$line" | sed 's/^[[:space:]]*setup_script:[[:space:]]*//' | sed 's/^"//;s/"$//' | sed "s/^'//;s/'$//" | sed 's/[[:space:]]*$//')
+            in_env_copy=0
+        fi
+        if [[ $in_worktree -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+env_copy: ]]; then
+            # Inline form: env_copy: [a, b, c]
+            local inline
+            inline=$(printf '%s' "$line" | sed -n 's/.*env_copy:[[:space:]]*\[//p' | sed 's/\].*//')
+            if [[ -n "$inline" ]]; then
+                local item
+                local IFS_BAK="$IFS"
+                IFS=','
+                for item in $inline; do
+                    item=$(printf '%s' "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/^"//;s/"$//' | sed "s/^'//;s/'$//")
+                    if [[ -n "$item" ]]; then
+                        env_copy_lines="${env_copy_lines}${item}"$'\n'
+                    fi
+                done
+                IFS="$IFS_BAK"
+                in_env_copy=0
+            else
+                in_env_copy=1
+                continue
+            fi
+        fi
+        if [[ $in_env_copy -eq 1 ]]; then
+            if [[ "$line" =~ ^[[:space:]]+- ]]; then
+                local item
+                item=$(printf '%s' "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^"//;s/"$//' | sed "s/^'//;s/'$//" | sed 's/[[:space:]]*$//')
+                if [[ -n "$item" ]]; then
+                    env_copy_lines="${env_copy_lines}${item}"$'\n'
+                fi
+            elif [[ -n "$line" ]] && [[ ! "$line" =~ ^[[:space:]]*# ]]; then
+                in_env_copy=0
+            fi
+        fi
+    done < "$config_file"
+
+    if [[ -z "$package_manager" ]]; then
+        echo "package_manager=npm"
+    else
+        echo "package_manager=$package_manager"
+    fi
+
+    if [[ -n "$setup_script" ]] && [[ "$setup_script" != "null" ]] && [[ "$setup_script" != "~" ]]; then
+        echo "setup_script=$setup_script"
+    fi
+
+    if [[ -n "$env_copy_lines" ]]; then
+        printf '%s' "$env_copy_lines" | while IFS= read -r item; do
+            [[ -n "$item" ]] && echo "env_copy=$item"
+        done
+    fi
 }

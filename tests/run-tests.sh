@@ -511,6 +511,263 @@ run_test "without --no-checkout still checks out branch (backwards compat)" bash
   rm -rf "$dir"
 '
 
+# ── --provision-worktree flag (TRI-26) ──
+
+echo ""
+echo "--provision-worktree flag:"
+
+run_test "--provision-worktree happy path installs deps and runs setup script" bash -c '
+  parent=$(mktemp -d)
+  main=$(
+    mkdir -p "$parent/main/scripts" "$parent/main/.trc/templates"
+    cd "$parent/main"
+    git init -q >/dev/null
+    npm init -y >/dev/null 2>&1
+    cat > tricycle.config.yml <<YAML
+project:
+  name: "provdemo"
+  package_manager: "npm"
+worktree:
+  enabled: true
+  setup_script: scripts/worktree-setup.sh
+  env_copy:
+    - .env.local
+YAML
+    cat > scripts/worktree-setup.sh <<EOS
+#!/usr/bin/env bash
+set -e
+touch .env.local
+EOS
+    chmod +x scripts/worktree-setup.sh
+    printf "# Spec Template\n" > .trc/templates/spec-template.md
+    git add -A >/dev/null
+    git commit -q -m seed >/dev/null
+    pwd
+  )
+  cd "$main"
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style feature-name --short-name "demo" --json --provision-worktree 2>&1)
+  echo "$out" | grep -q "\"WORKTREE_PATH\":" || { echo "missing WORKTREE_PATH in: $out" >&2; rm -rf "$parent"; exit 1; }
+  wt="$parent/provdemo-demo"
+  [ -d "$wt" ] || { echo "worktree dir missing: $wt" >&2; rm -rf "$parent"; exit 1; }
+  [ -f "$wt/.env.local" ] || { echo ".env.local missing" >&2; rm -rf "$parent"; exit 1; }
+  [ -d "$wt/node_modules" ] || [ -f "$wt/package-lock.json" ] || { echo "install never ran" >&2; rm -rf "$parent"; exit 1; }
+  [ -d "$wt/.trc" ] || { echo ".trc not copied" >&2; rm -rf "$parent"; exit 1; }
+  [ -f "$wt/specs/demo/spec.md" ] || { echo "spec not created" >&2; rm -rf "$parent"; exit 1; }
+  rm -rf "$parent"
+'
+
+run_test "--provision-worktree with no setup_script or env_copy is no-op (still exits 0)" bash -c '
+  parent=$(mktemp -d)
+  main="$parent/main"
+  mkdir -p "$main/.trc/templates"
+  cd "$main"
+  git init -q
+  npm init -y >/dev/null 2>&1
+  cat > tricycle.config.yml <<YAML
+project:
+  name: "bareproj"
+  package_manager: "npm"
+worktree:
+  enabled: true
+YAML
+  printf "# Spec Template\n" > .trc/templates/spec-template.md
+  git add -A && git commit -q -m seed
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style feature-name --short-name "bare" --json --provision-worktree 2>&1) || { echo "failed: $out" >&2; rm -rf "$parent"; exit 1; }
+  [ -d "$parent/bareproj-bare" ] || { rm -rf "$parent"; exit 1; }
+  rm -rf "$parent"
+'
+
+run_test "--provision-worktree fails with exit 12 when setup_script missing" bash -c '
+  parent=$(mktemp -d)
+  main="$parent/main"
+  mkdir -p "$main/.trc/templates"
+  cd "$main"
+  git init -q
+  npm init -y >/dev/null 2>&1
+  cat > tricycle.config.yml <<YAML
+project:
+  name: "missing"
+  package_manager: "npm"
+worktree:
+  enabled: true
+  setup_script: scripts/does-not-exist.sh
+YAML
+  printf "# Spec Template\n" > .trc/templates/spec-template.md
+  git add -A && git commit -q -m seed
+  set +e
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style feature-name --short-name "m" --json --provision-worktree 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 12 ] || { echo "expected exit 12 got $rc" >&2; rm -rf "$parent"; exit 1; }
+  echo "$out" | grep -q "does not exist in worktree root" || { echo "wrong error: $out" >&2; rm -rf "$parent"; exit 1; }
+  rm -rf "$parent"
+'
+
+run_test "--provision-worktree fails with exit 14 when setup_script exits non-zero" bash -c '
+  parent=$(mktemp -d)
+  main="$parent/main"
+  mkdir -p "$main/scripts" "$main/.trc/templates"
+  cd "$main"
+  git init -q
+  npm init -y >/dev/null 2>&1
+  cat > tricycle.config.yml <<YAML
+project:
+  name: "fails"
+  package_manager: "npm"
+worktree:
+  enabled: true
+  setup_script: scripts/fail.sh
+YAML
+  cat > scripts/fail.sh <<EOS
+#!/usr/bin/env bash
+exit 7
+EOS
+  chmod +x scripts/fail.sh
+  printf "# Spec Template\n" > .trc/templates/spec-template.md
+  git add -A && git commit -q -m seed
+  set +e
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style feature-name --short-name "f" --json --provision-worktree 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 14 ] || { echo "expected 14 got $rc: $out" >&2; rm -rf "$parent"; exit 1; }
+  echo "$out" | grep -q "exited 7" || { echo "wrong err: $out" >&2; rm -rf "$parent"; exit 1; }
+  rm -rf "$parent"
+'
+
+run_test "--provision-worktree fails with exit 15 when env_copy path missing" bash -c '
+  parent=$(mktemp -d)
+  main="$parent/main"
+  mkdir -p "$main/scripts" "$main/.trc/templates"
+  cd "$main"
+  git init -q
+  npm init -y >/dev/null 2>&1
+  cat > tricycle.config.yml <<YAML
+project:
+  name: "ec"
+  package_manager: "npm"
+worktree:
+  enabled: true
+  setup_script: scripts/empty.sh
+  env_copy:
+    - .env.notcreated
+    - also-missing
+YAML
+  cat > scripts/empty.sh <<EOS
+#!/usr/bin/env bash
+exit 0
+EOS
+  chmod +x scripts/empty.sh
+  printf "# Spec Template\n" > .trc/templates/spec-template.md
+  git add -A && git commit -q -m seed
+  set +e
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style feature-name --short-name "e" --json --provision-worktree 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 15 ] || { echo "expected 15 got $rc: $out" >&2; rm -rf "$parent"; exit 1; }
+  echo "$out" | grep -q "env_copy paths missing after setup" || { echo "wrong err: $out" >&2; rm -rf "$parent"; exit 1; }
+  echo "$out" | grep -q ".env.notcreated" || { echo "missing first path in err" >&2; rm -rf "$parent"; exit 1; }
+  echo "$out" | grep -q "also-missing" || { echo "missing second path in err" >&2; rm -rf "$parent"; exit 1; }
+  rm -rf "$parent"
+'
+
+run_test "--provision-worktree fails with exit 11 when package manager not on PATH" bash -c '
+  parent=$(mktemp -d)
+  main="$parent/main"
+  mkdir -p "$main/.trc/templates"
+  cd "$main"
+  git init -q
+  npm init -y >/dev/null 2>&1
+  cat > tricycle.config.yml <<YAML
+project:
+  name: "nopm"
+  package_manager: "does-not-exist-pm-xyz"
+worktree:
+  enabled: true
+YAML
+  printf "# Spec Template\n" > .trc/templates/spec-template.md
+  git add -A && git commit -q -m seed
+  set +e
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style feature-name --short-name "n" --json --provision-worktree 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 11 ] || { echo "expected 11 got $rc: $out" >&2; rm -rf "$parent"; exit 1; }
+  echo "$out" | grep -q "not found on PATH" || { echo "wrong err: $out" >&2; rm -rf "$parent"; exit 1; }
+  rm -rf "$parent"
+'
+
+run_test "--provision-worktree respects project.package_manager (pnpm stub)" bash -c '
+  parent=$(mktemp -d)
+  main="$parent/main"
+  stubdir="$parent/stub-bin"
+  mkdir -p "$main/.trc/templates" "$stubdir"
+  # Stub "pnpm" that records its invocation and exits 0
+  cat > "$stubdir/pnpm" <<EOS
+#!/usr/bin/env bash
+echo "PNPM_CALLED \$*" > "$parent/pnpm-marker"
+exit 0
+EOS
+  chmod +x "$stubdir/pnpm"
+  export PATH="$stubdir:$PATH"
+  cd "$main"
+  git init -q
+  npm init -y >/dev/null 2>&1
+  cat > tricycle.config.yml <<YAML
+project:
+  name: "pnp"
+  package_manager: "pnpm"
+worktree:
+  enabled: true
+YAML
+  printf "# Spec Template\n" > .trc/templates/spec-template.md
+  git add -A && git commit -q -m seed
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style feature-name --short-name "p" --json --provision-worktree 2>&1) || { echo "failed: $out" >&2; rm -rf "$parent"; exit 1; }
+  grep -q "PNPM_CALLED install" "$parent/pnpm-marker" || { echo "pnpm stub not invoked with install" >&2; rm -rf "$parent"; exit 1; }
+  rm -rf "$parent"
+'
+
+run_test "--provision-worktree defaults to npm when project.package_manager is unset" bash -c '
+  parent=$(mktemp -d)
+  main="$parent/main"
+  stubdir="$parent/stub-bin"
+  mkdir -p "$main/.trc/templates" "$stubdir"
+  # Stub "npm" that records invocation; project init still needs real npm so we put the stub later in PATH.
+  cat > "$stubdir/npm" <<EOS
+#!/usr/bin/env bash
+if [ "\$1" = "install" ]; then
+  echo "NPM_DEFAULT_CALLED" > "$parent/npm-marker"
+  exit 0
+fi
+exec /usr/bin/env -i PATH=/usr/bin:/bin npm "\$@"
+EOS
+  chmod +x "$stubdir/npm"
+  cd "$main"
+  git init -q
+  # Use the REAL npm for init (via absolute-path lookup), not the stub
+  REAL_NPM=$(command -v npm)
+  "$REAL_NPM" init -y >/dev/null 2>&1
+  cat > tricycle.config.yml <<YAML
+project:
+  name: "defpm"
+worktree:
+  enabled: true
+YAML
+  printf "# Spec Template\n" > .trc/templates/spec-template.md
+  git add -A && git commit -q -m seed
+  export PATH="$stubdir:$PATH"
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style feature-name --short-name "d" --json --provision-worktree 2>&1) || { echo "failed: $out" >&2; rm -rf "$parent"; exit 1; }
+  [ -f "$parent/npm-marker" ] || { echo "default npm stub not invoked" >&2; rm -rf "$parent"; exit 1; }
+  rm -rf "$parent"
+'
+
+run_test "without --provision-worktree no WORKTREE_PATH key in JSON (backwards compat)" bash -c '
+  dir=$(mktemp -d)
+  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q && mkdir -p specs
+  out=$("'"$CREATE_SCRIPT"'" "Add feature" --style ordered --short-name "test-bc" --json 2>/dev/null)
+  echo "$out" | grep -q "\"BRANCH_NAME\":" || exit 1
+  ! echo "$out" | grep -q "WORKTREE_PATH" || exit 1
+  rm -rf "$dir"
+'
+
 # ── Status command ──
 
 echo ""

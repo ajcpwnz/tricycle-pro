@@ -22,13 +22,18 @@ Check the current working directory:
 
 Read `tricycle.config.yml` for worktree settings:
 - `project.name` — for substitution into the path pattern
+- `project.package_manager` — passed through to `create-new-feature.sh --provision-worktree` (defaults to `npm` when unset)
+- `worktree.setup_script` — passed through to `create-new-feature.sh --provision-worktree` (no-op when unset)
+- `worktree.env_copy` — passed through to `create-new-feature.sh --provision-worktree` (no-op when empty)
 - Default worktree path: `../{project}-{branch}` (where `{project}` is the project name and `{branch}` is the branch name from the script output)
 
-Keep these values available for the feature-setup block.
+The three pass-through fields above are **read by `create-new-feature.sh` directly**, not by this block. Listing them here documents the contract: when the feature-setup block calls the script with `--provision-worktree`, every one of those fields flows into a single atomic provisioning step (dependency install → setup script → env-copy verification). The block MUST NOT re-parse these fields or re-run any of those steps inline.
+
+Keep `project.name` available for the feature-setup block.
 
 ### Notes
 
 - This block only detects and configures. It does NOT create branches or worktrees.
-- The feature-setup block (next) will use `WORKTREE_MODE` to decide whether to pass `--no-checkout` to `create-new-feature.sh` and whether to create the worktree after branch creation.
+- The feature-setup block (next) will use `WORKTREE_MODE` to decide whether to pass `--provision-worktree` to `create-new-feature.sh`. That single flag owns branch creation, worktree creation, `.trc/` copy, dependency install, setup-script execution, env-copy verification, and spec directory/template creation.
 - The worktree isolates feature work from the main checkout, preventing accidental changes to main.
-- If worktree creation fails later (e.g., branch already checked out elsewhere), report the error and suggest the user resolve the conflict manually.
+- If worktree creation or any provisioning sub-step fails, the script exits with a reserved non-zero code (10–15). Surface the error verbatim and let the user resolve it manually — do NOT retry or paper over the failure.
