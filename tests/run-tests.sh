@@ -946,6 +946,37 @@ run_test "status --all shows features without worktrees" bash -c '
   rm -rf "$dir"
 '
 
+# ── chain-run.sh (TRI-27) ──
+
+echo ""
+echo "chain-run.sh (TRI-27):"
+
+run_test "node --test tests/test-chain-run-*.js all pass" bash -c '
+  cd "'"$REPO_ROOT"'" && node --test \
+    tests/test-chain-run-parse-range.js \
+    tests/test-chain-run-state.js \
+    tests/test-chain-run-update-ticket.js \
+    tests/test-chain-run-close.js \
+    tests/test-chain-run-interrupted.js \
+    tests/test-chain-run-progress.js
+'
+
+run_test "e2e happy path (tests/test-chain-run-e2e-happy.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-happy.sh"
+run_test "e2e stop-on-failure (tests/test-chain-run-e2e-failure.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-failure.sh"
+run_test "e2e resume flow (tests/test-chain-run-e2e-resume.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-resume.sh"
+run_test "epic brief copy + missing (tests/test-chain-run-epic-brief.sh)" bash "$REPO_ROOT/tests/test-chain-run-epic-brief.sh"
+
+run_test "trc.chain command template exists and has description" bash -c '
+  [ -f "'"$REPO_ROOT"'/core/commands/trc.chain.md" ] || exit 1
+  grep -q "^description:" "'"$REPO_ROOT"'/core/commands/trc.chain.md"
+'
+
+run_test "chain-run.sh is executable" test -x "$REPO_ROOT/core/scripts/bash/chain-run.sh"
+
+run_test "specs/.chain-runs/ is gitignored" bash -c '
+  cd "'"$REPO_ROOT"'" && grep -q "specs/.chain-runs/" .gitignore
+'
+
 # ── Summary ──
 
 echo ""

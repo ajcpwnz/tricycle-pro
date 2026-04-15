@@ -23,3 +23,6 @@ node_modules/
 
 # Tricycle Pro lock
 .tricycle.lock
+
+# Runtime chain-run state (from /trc.chain)
+specs/.chain-runs/
