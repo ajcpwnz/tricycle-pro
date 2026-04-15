@@ -51,6 +51,8 @@ Post review findings to PR #42 as a comment? (y/N)
 
 If the user answers anything other than `y` or `yes` (case-insensitive), posting is skipped and the command completes successfully with the local report only. Confirmation is always interactive — there is no `--yes` auto-confirm flag in this ticket.
 
+**Two trigger paths**: posting can also be enabled durably via `review.post_to_pr: true` in `tricycle.config.yml`. When triggered by the config flag, the confirmation prompt is **skipped** because the user has already opted in via version-controlled config. The CLI flag (`--post`) remains the ad-hoc, confirmation-gated path. The two are not mutually exclusive — if both are set, the CLI flag's confirmation prompt is bypassed (since the user is already opted in via config).
+
 ### `--source <name>`
 
 Restricts evaluation to a single configured remote source (by `name` as declared in `tricycle.config.yml` → `review.sources[]`). When this flag is used, bundled profiles are skipped entirely. The constitution and custom prompt still run. An unknown source name is an error that lists available source names.

@@ -18,11 +18,11 @@ review:
 
   report_dir: docs/reviews # Where review reports are written. Relative path.
 
-  post_to_pr: false        # Reserved for a future default. In this ticket
-                           # the --post flag must always be passed explicitly
-                           # and the confirmation prompt is always interactive;
-                           # this field is accepted and stored for forward
-                           # compatibility but has no runtime effect yet.
+  post_to_pr: false        # When true, every /trc.review run posts the
+                           # condensed PR comment automatically and skips
+                           # the confirmation prompt (durable opt-in). When
+                           # false, posting only happens via --post on the
+                           # command line, which is confirmation-gated.
 
 workflow:
   blocks:
@@ -41,7 +41,7 @@ workflow:
 | `review.sources[].name` | string | — | yes (per entry) | Unique within `sources` |
 | `review.sources[].url` | string (URL) | — | yes (per entry) | Must start with `https://` |
 | `review.report_dir` | string (relative path) | `docs/reviews` | no | No absolute paths, no `..` |
-| `review.post_to_pr` | bool | `false` | no | Reserved; not read in this ticket |
+| `review.post_to_pr` | bool | `false` | no | When `true`, the command posts the condensed PR comment automatically without requiring `--post` and **skips the confirmation prompt** (durable opt-in via version-controlled config). When `false`, posting only happens via the `--post` CLI flag with interactive confirmation. |
 | `workflow.blocks.review.skills` | array of string | `[]` | no | Skill names; each must resolve to `.claude/skills/<name>/SKILL.md` at runtime to be invoked |
 
 ## Validation rules (enforced at command run, not at config load)

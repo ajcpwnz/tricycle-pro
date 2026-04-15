@@ -77,6 +77,17 @@ run_test "trc.review.md references empty-diff detection" \
 run_test "trc.review.md mentions --post confirmation gate" \
   assert_grep "$REPO_ROOT/core/commands/trc.review.md" 'Post review findings to PR'
 
+run_test "trc.review.md honors review.post_to_pr config flag (TRI-29)" \
+  assert_grep "$REPO_ROOT/core/commands/trc.review.md" "review.post_to_pr: true"
+
+run_test "trc.review.md does NOT call post_to_pr 'reserved' (TRI-29)" bash -c "
+  ! grep -q 'reserved; not read in this version' '$REPO_ROOT/core/commands/trc.review.md'
+"
+
+run_test "config-schema.md does NOT call post_to_pr 'reserved' (TRI-29)" bash -c "
+  ! grep -q 'Reserved; not read in this ticket' '$REPO_ROOT/specs/TRI-28-trc-review-command/contracts/config-schema.md'
+"
+
 # ── Bundled profiles ──────────────────────────────────────────────────────
 
 echo ""
