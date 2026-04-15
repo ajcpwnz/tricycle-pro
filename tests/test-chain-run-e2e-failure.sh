@@ -12,10 +12,15 @@ INIT=$(bash "$CHAIN" init --ids '["TRI-9200","TRI-9201","TRI-9202"]')
 RID=$(echo "$INIT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])')
 trap 'rm -rf "$REPO_ROOT/specs/.chain-runs/$RID"' EXIT
 
-# Ticket 1 completes.
-bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9200 --status completed --finished-now --lint pass --test pass >/dev/null
+# Ticket 1 walks the full TRI-30 path to completed.
+bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9200 --status in_progress >/dev/null
+bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9200 --status committed --commit-sha sha9200 --lint pass --test pass >/dev/null
+bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9200 --status pushed --pr "https://example.com/pr/9200" >/dev/null
+bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9200 --status merged >/dev/null
+bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9200 --status completed --finished-now >/dev/null
 
-# Ticket 2 fails (test failure).
+# Ticket 2 starts then fails (test failure during in_progress).
+bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9201 --status in_progress >/dev/null
 bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9201 --status failed --finished-now --lint pass --test fail >/dev/null
 
 # Orchestrator closes the run as failed.

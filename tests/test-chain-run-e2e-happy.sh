@@ -31,12 +31,21 @@ for tid in s["ticket_ids"]:
     assert s["tickets"][tid]["status"] == "not_started"
 '
 
-# Advance ticket 1 through in_progress → completed.
-bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9100 --status in_progress --started-now >/dev/null
-bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9100 --status completed --finished-now \
-    --branch TRI-9100-feat --pr "https://example.com/pr/1" --lint pass --test pass >/dev/null
+# Advance each ticket through the full TRI-30 path:
+# not_started → in_progress → committed → pushed → merged → completed.
+walk_full_path() {
+    local tid="$1" branch="$2" sha="$3" pr="$4"
+    bash "$CHAIN" update-ticket --run-id "$RID" --ticket "$tid" --status in_progress --started-now >/dev/null
+    bash "$CHAIN" update-ticket --run-id "$RID" --ticket "$tid" --status committed \
+        --commit-sha "$sha" --branch "$branch" --lint pass --test pass >/dev/null
+    bash "$CHAIN" update-ticket --run-id "$RID" --ticket "$tid" --status pushed --pr "$pr" >/dev/null
+    bash "$CHAIN" update-ticket --run-id "$RID" --ticket "$tid" --status merged >/dev/null
+    bash "$CHAIN" update-ticket --run-id "$RID" --ticket "$tid" --status completed --finished-now >/dev/null
+}
 
-# Verify current_index advanced.
+walk_full_path TRI-9100 TRI-9100-feat sha9100 "https://example.com/pr/1"
+
+# Verify ticket 1 fully shipped and current_index advanced.
 bash "$CHAIN" get --run-id "$RID" | python3 -c '
 import json, sys
 s = json.load(sys.stdin)
@@ -44,11 +53,11 @@ ci = s["current_index"]
 assert ci == 1, "expected current_index=1, got " + str(ci)
 assert s["tickets"]["TRI-9100"]["status"] == "completed"
 assert s["tickets"]["TRI-9100"]["pr_url"] == "https://example.com/pr/1"
+assert s["tickets"]["TRI-9100"]["commit_sha"] == "sha9100"
 '
 
-# Advance ticket 2 and 3.
-bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9101 --status completed --finished-now --branch TRI-9101-feat --pr "https://example.com/pr/2" --lint pass --test pass >/dev/null
-bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9102 --status completed --finished-now --branch TRI-9102-feat --pr "https://example.com/pr/3" --lint pass --test pass >/dev/null
+walk_full_path TRI-9101 TRI-9101-feat sha9101 "https://example.com/pr/2"
+walk_full_path TRI-9102 TRI-9102-feat sha9102 "https://example.com/pr/3"
 
 # Close the run.
 bash "$CHAIN" close --run-id "$RID" --terminal-status completed >/dev/null

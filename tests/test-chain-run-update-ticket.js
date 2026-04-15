@@ -37,7 +37,7 @@ describe('chain-run.sh update-ticket', () => {
   const runs = [];
   after(() => runs.forEach(cleanup));
 
-  it('happy path: not_started → in_progress → completed', () => {
+  it('happy path: full TRI-30 transition not_started → in_progress → committed → pushed → merged → completed', () => {
     const id = initRun(['TRI-100', 'TRI-101']);
     runs.push(id);
 
@@ -48,16 +48,108 @@ describe('chain-run.sh update-ticket', () => {
     assert.ok(s.tickets['TRI-100'].started_at);
     assert.equal(s.current_index, 0);
 
-    r = run(`update-ticket --run-id ${id} --ticket TRI-100 --status completed --finished-now --branch TRI-100-x --pr https://ex/1 --lint pass --test pass --report specs/.chain-runs/${id}/TRI-100.report.md`);
-    assert.equal(r.exit, 0);
+    r = run(`update-ticket --run-id ${id} --ticket TRI-100 --status committed --commit-sha abc123def --branch TRI-100-x --lint pass --test pass --report specs/.chain-runs/${id}/TRI-100.report.md`);
+    assert.equal(r.exit, 0, `committed step failed: ${r.stderr}`);
     s = JSON.parse(r.stdout);
-    assert.equal(s.tickets['TRI-100'].status, 'completed');
+    assert.equal(s.tickets['TRI-100'].status, 'committed');
+    assert.equal(s.tickets['TRI-100'].commit_sha, 'abc123def');
     assert.equal(s.tickets['TRI-100'].branch, 'TRI-100-x');
-    assert.equal(s.tickets['TRI-100'].pr_url, 'https://ex/1');
     assert.equal(s.tickets['TRI-100'].lint_status, 'pass');
     assert.equal(s.tickets['TRI-100'].test_status, 'pass');
+    assert.equal(s.current_index, 1, 'current_index should advance past committed tickets');
+
+    r = run(`update-ticket --run-id ${id} --ticket TRI-100 --status pushed --pr https://ex/1`);
+    assert.equal(r.exit, 0, `pushed step failed: ${r.stderr}`);
+    s = JSON.parse(r.stdout);
+    assert.equal(s.tickets['TRI-100'].status, 'pushed');
+    assert.equal(s.tickets['TRI-100'].pr_url, 'https://ex/1');
+    assert.equal(s.tickets['TRI-100'].commit_sha, 'abc123def', 'commit_sha persists across transitions');
+
+    r = run(`update-ticket --run-id ${id} --ticket TRI-100 --status merged`);
+    assert.equal(r.exit, 0, `merged step failed: ${r.stderr}`);
+    assert.equal(JSON.parse(r.stdout).tickets['TRI-100'].status, 'merged');
+
+    r = run(`update-ticket --run-id ${id} --ticket TRI-100 --status completed --finished-now`);
+    assert.equal(r.exit, 0, `completed step failed: ${r.stderr}`);
+    s = JSON.parse(r.stdout);
+    assert.equal(s.tickets['TRI-100'].status, 'completed');
     assert.ok(s.tickets['TRI-100'].finished_at);
-    assert.equal(s.current_index, 1, 'current_index should advance past completed tickets');
+    assert.equal(s.tickets['TRI-100'].commit_sha, 'abc123def');
+  });
+
+  it('committed without --commit-sha returns ERR_COMMIT_SHA_REQUIRED', () => {
+    const id = initRun(['TRI-150']);
+    runs.push(id);
+    run(`update-ticket --run-id ${id} --ticket TRI-150 --status in_progress`);
+    const r = run(`update-ticket --run-id ${id} --ticket TRI-150 --status committed`);
+    assert.equal(r.exit, 2);
+    assert.equal(JSON.parse(r.stderr).code, 'ERR_COMMIT_SHA_REQUIRED');
+  });
+
+  it('commit_sha is immutable on second different value', () => {
+    const id = initRun(['TRI-160']);
+    runs.push(id);
+    run(`update-ticket --run-id ${id} --ticket TRI-160 --status in_progress`);
+    run(`update-ticket --run-id ${id} --ticket TRI-160 --status committed --commit-sha first`);
+    const r = run(`update-ticket --run-id ${id} --ticket TRI-160 --status pushed --pr https://ex/1 --commit-sha different`);
+    assert.equal(r.exit, 2);
+    assert.equal(JSON.parse(r.stderr).code, 'ERR_COMMIT_SHA_IMMUTABLE');
+  });
+
+  it('backward transition (committed → in_progress) returns ERR_BAD_TRANSITION', () => {
+    const id = initRun(['TRI-170']);
+    runs.push(id);
+    run(`update-ticket --run-id ${id} --ticket TRI-170 --status in_progress`);
+    run(`update-ticket --run-id ${id} --ticket TRI-170 --status committed --commit-sha s`);
+    const r = run(`update-ticket --run-id ${id} --ticket TRI-170 --status in_progress`);
+    assert.equal(r.exit, 2);
+    assert.equal(JSON.parse(r.stderr).code, 'ERR_BAD_TRANSITION');
+  });
+
+  it('skip-forward transition (not_started → merged) returns ERR_BAD_TRANSITION', () => {
+    const id = initRun(['TRI-180']);
+    runs.push(id);
+    const r = run(`update-ticket --run-id ${id} --ticket TRI-180 --status merged`);
+    assert.equal(r.exit, 2);
+    assert.equal(JSON.parse(r.stderr).code, 'ERR_BAD_TRANSITION');
+  });
+
+  it('skip-forward (in_progress → pushed) returns ERR_BAD_TRANSITION', () => {
+    const id = initRun(['TRI-185']);
+    runs.push(id);
+    run(`update-ticket --run-id ${id} --ticket TRI-185 --status in_progress`);
+    const r = run(`update-ticket --run-id ${id} --ticket TRI-185 --status pushed --pr https://ex/1`);
+    assert.equal(r.exit, 2);
+    assert.equal(JSON.parse(r.stderr).code, 'ERR_BAD_TRANSITION');
+  });
+
+  it('failed is legal from any non-terminal state', () => {
+    const id = initRun(['TRI-190', 'TRI-191', 'TRI-192']);
+    runs.push(id);
+    // From in_progress
+    run(`update-ticket --run-id ${id} --ticket TRI-190 --status in_progress`);
+    let r = run(`update-ticket --run-id ${id} --ticket TRI-190 --status failed`);
+    assert.equal(r.exit, 0);
+    // From committed
+    run(`update-ticket --run-id ${id} --ticket TRI-191 --status in_progress`);
+    run(`update-ticket --run-id ${id} --ticket TRI-191 --status committed --commit-sha s`);
+    r = run(`update-ticket --run-id ${id} --ticket TRI-191 --status failed`);
+    assert.equal(r.exit, 0);
+  });
+
+  it('skipped is legal only from not_started', () => {
+    const id = initRun(['TRI-195']);
+    runs.push(id);
+    // Legal from not_started
+    let r = run(`update-ticket --run-id ${id} --ticket TRI-195 --status skipped`);
+    assert.equal(r.exit, 0);
+    // Illegal from in_progress
+    const id2 = initRun(['TRI-196']);
+    runs.push(id2);
+    run(`update-ticket --run-id ${id2} --ticket TRI-196 --status in_progress`);
+    r = run(`update-ticket --run-id ${id2} --ticket TRI-196 --status skipped`);
+    assert.equal(r.exit, 2);
+    assert.equal(JSON.parse(r.stderr).code, 'ERR_BAD_TRANSITION');
   });
 
   it('--open-question appends entries', () => {
@@ -69,13 +161,23 @@ describe('chain-run.sh update-ticket', () => {
     assert.deepEqual(s.tickets['TRI-200'].open_questions, ['needs review', 'DB schema unclear']);
   });
 
-  it('pr_url without completed status returns ERR_PR_REQUIRES_COMPLETED', () => {
+  it('pr_url at in_progress status returns ERR_PR_REQUIRES_PUSHED_OR_LATER', () => {
     const id = initRun(['TRI-300']);
     runs.push(id);
     const r = run(`update-ticket --run-id ${id} --ticket TRI-300 --status in_progress --pr https://ex/1`);
     assert.equal(r.exit, 2);
     const e = JSON.parse(r.stderr);
-    assert.equal(e.code, 'ERR_PR_REQUIRES_COMPLETED');
+    assert.equal(e.code, 'ERR_PR_REQUIRES_PUSHED_OR_LATER');
+  });
+
+  it('pr_url is allowed at status=pushed (TRI-30 relaxation)', () => {
+    const id = initRun(['TRI-310']);
+    runs.push(id);
+    run(`update-ticket --run-id ${id} --ticket TRI-310 --status in_progress`);
+    run(`update-ticket --run-id ${id} --ticket TRI-310 --status committed --commit-sha sha`);
+    const r = run(`update-ticket --run-id ${id} --ticket TRI-310 --status pushed --pr https://ex/1`);
+    assert.equal(r.exit, 0);
+    assert.equal(JSON.parse(r.stdout).tickets['TRI-310'].pr_url, 'https://ex/1');
   });
 
   it('ticket not in run returns ERR_TICKET_NOT_IN_RUN', () => {

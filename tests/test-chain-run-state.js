@@ -53,6 +53,8 @@ describe('chain-run.sh init + get', () => {
     assert.equal(state.tickets['TRI-100'].status, 'not_started');
     assert.equal(state.tickets['TRI-101'].status, 'not_started');
     assert.equal(state.tickets['TRI-100'].branch, null);
+    assert.equal(state.tickets['TRI-100'].commit_sha, null, 'TRI-30: commit_sha field initialized to null');
+    assert.equal(state.tickets['TRI-101'].commit_sha, null);
     assert.ok(state.created_at);
     assert.equal(state.epic_brief_path, null);
   });
