@@ -87,6 +87,7 @@ tickets = {
     tid: {
         "status": "not_started",
         "branch": None,
+        "commit_sha": None,
         "worktree_path": None,
         "pr_url": None,
         "lint_status": None,
@@ -115,13 +116,13 @@ PY
 }
 
 py_update_ticket() {
-    # Args: state_json ticket status branch worktree pr lint test report open_q_json started_now finished_now
+    # Args: state_json ticket status branch worktree pr lint test report open_q_json started_now finished_now commit_sha
     local state_json="$1"; shift
     python3 - "$state_json" "$@" <<'PY'
 import json, sys, datetime
 args = sys.argv[1:]
 (state_json, ticket, status, branch, worktree, pr, lint, test, report,
- open_q_json, started_now, finished_now) = args
+ open_q_json, started_now, finished_now, commit_sha) = args
 state = json.loads(state_json)
 if state.get("status") != "in_progress":
     print(json.dumps({"error": f"run is already closed (status={state.get('status')})", "code": "ERR_RUN_CLOSED"}), file=sys.stderr)
@@ -129,36 +130,64 @@ if state.get("status") != "in_progress":
 if ticket not in state["tickets"]:
     print(json.dumps({"error": f"ticket not in run: {ticket}", "code": "ERR_TICKET_NOT_IN_RUN"}), file=sys.stderr)
     sys.exit(5)
-if status not in ("not_started", "in_progress", "completed", "failed", "skipped"):
+VALID_STATUSES = ("not_started", "in_progress", "committed", "pushed", "merged", "completed", "failed", "skipped")
+if status not in VALID_STATUSES:
     print(json.dumps({"error": f"invalid status: {status}", "code": "ERR_BAD_STATUS"}), file=sys.stderr)
     sys.exit(2)
-if pr and status != "completed":
-    print(json.dumps({"error": "pr_url requires status=completed", "code": "ERR_PR_REQUIRES_COMPLETED"}), file=sys.stderr)
+RANK = {"not_started": 0, "in_progress": 1, "committed": 2, "pushed": 3, "merged": 4, "completed": 5}
+t = state["tickets"][ticket]
+old_status = t.get("status", "not_started")
+# Forward-transition validator (TRI-30 FR-014).
+if status == "failed":
+    pass  # always legal
+elif status == "skipped":
+    if old_status != "not_started":
+        print(json.dumps({"error": f"illegal transition: {old_status} -> skipped (only legal from not_started)", "code": "ERR_BAD_TRANSITION"}), file=sys.stderr)
+        sys.exit(2)
+elif status in RANK:
+    if old_status not in RANK or RANK[status] != RANK[old_status] + 1:
+        print(json.dumps({"error": f"illegal transition: {old_status} -> {status}", "code": "ERR_BAD_TRANSITION"}), file=sys.stderr)
+        sys.exit(2)
+# Relaxed pr validation: allowed for pushed/merged/completed.
+if pr and status not in ("pushed", "merged", "completed"):
+    print(json.dumps({"error": "pr_url is only allowed when status is pushed, merged, or completed", "code": "ERR_PR_REQUIRES_PUSHED_OR_LATER"}), file=sys.stderr)
+    sys.exit(2)
+# commit_sha validation.
+existing_sha = t.get("commit_sha")
+if commit_sha and existing_sha and commit_sha != existing_sha:
+    print(json.dumps({"error": f"commit_sha is immutable (existing={existing_sha}, new={commit_sha})", "code": "ERR_COMMIT_SHA_IMMUTABLE"}), file=sys.stderr)
+    sys.exit(2)
+if status == "committed" and not (commit_sha or existing_sha):
+    print(json.dumps({"error": "status=committed requires --commit-sha", "code": "ERR_COMMIT_SHA_REQUIRED"}), file=sys.stderr)
     sys.exit(2)
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-t = state["tickets"][ticket]
 t["status"] = status
-if branch:   t["branch"] = branch
-if worktree: t["worktree_path"] = worktree
-if pr:       t["pr_url"] = pr
-if lint:     t["lint_status"] = lint
-if test:     t["test_status"] = test
-if report:   t["report_path"] = report
+if branch:     t["branch"] = branch
+if worktree:   t["worktree_path"] = worktree
+if pr:         t["pr_url"] = pr
+if lint:       t["lint_status"] = lint
+if test:       t["test_status"] = test
+if report:     t["report_path"] = report
+if commit_sha: t["commit_sha"] = commit_sha
 if open_q_json:
     try:
         extra = json.loads(open_q_json)
         if isinstance(extra, list):
-            t["open_questions"].extend(extra)
+            t.setdefault("open_questions", []).extend(extra)
     except Exception:
         pass
 if started_now == "1":
     t["started_at"] = now
 if finished_now == "1":
     t["finished_at"] = now
-# Advance current_index past any completed/skipped tail.
+# Backfill commit_sha key on legacy tickets so it's always present.
+if "commit_sha" not in t:
+    t["commit_sha"] = None
+# Advance current_index past any committed/pushed/merged/completed/skipped prefix.
+ADVANCE_PAST = ("committed", "pushed", "merged", "completed", "skipped")
 idx = state.get("current_index", 0)
 ids = state["ticket_ids"]
-while idx < len(ids) and state["tickets"][ids[idx]]["status"] in ("completed", "skipped"):
+while idx < len(ids) and state["tickets"][ids[idx]].get("status") in ADVANCE_PAST:
     idx += 1
 state["current_index"] = idx
 state["updated_at"] = now
@@ -401,7 +430,7 @@ sub_get() {
 
 sub_update_ticket() {
     local run_id="" ticket="" status=""
-    local branch="" worktree="" pr="" lint="" test="" report=""
+    local branch="" worktree="" pr="" lint="" test="" report="" commit_sha=""
     local started_now="0" finished_now="0"
     local open_questions=()
     while [[ $# -gt 0 ]]; do
@@ -415,6 +444,7 @@ sub_update_ticket() {
             --lint) lint="$2"; shift 2 ;;
             --test) test="$2"; shift 2 ;;
             --report) report="$2"; shift 2 ;;
+            --commit-sha) commit_sha="$2"; shift 2 ;;
             --open-question) open_questions+=("$2"); shift 2 ;;
             --started-now) started_now="1"; shift ;;
             --finished-now) finished_now="1"; shift ;;
@@ -439,7 +469,7 @@ print(json.dumps(sys.argv[1:]))
 ' "${open_questions[@]}")
     fi
     local updated
-    updated=$(py_update_ticket "$state_json" "$ticket" "$status" "$branch" "$worktree" "$pr" "$lint" "$test" "$report" "$oq_json" "$started_now" "$finished_now"); rc=$?
+    updated=$(py_update_ticket "$state_json" "$ticket" "$status" "$branch" "$worktree" "$pr" "$lint" "$test" "$report" "$oq_json" "$started_now" "$finished_now" "$commit_sha"); rc=$?
     if [[ $rc -ne 0 ]]; then return $rc; fi
     chain_run_write_state_atomic "$run_dir" "$updated"
     printf '%s\n' "$updated"

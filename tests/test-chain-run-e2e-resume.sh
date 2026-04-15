@@ -13,7 +13,9 @@ INIT=$(bash "$CHAIN" init --ids '["TRI-9300","TRI-9301","TRI-9302"]')
 RID=$(echo "$INIT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])')
 trap 'rm -rf "$REPO_ROOT/specs/.chain-runs/$RID"' EXIT
 
-bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9300 --status completed --finished-now --lint pass --test pass >/dev/null
+# TRI-30 transition path: walk TRI-9300 to committed (orchestrator was about to push when crash happened).
+bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9300 --status in_progress >/dev/null
+bash "$CHAIN" update-ticket --run-id "$RID" --ticket TRI-9300 --status committed --commit-sha sha9300 --branch TRI-9300-feat --lint pass --test pass >/dev/null
 
 # list-interrupted should find this run with next_ticket_id=TRI-9301.
 RID="$RID" bash "$CHAIN" list-interrupted | RID="$RID" python3 -c '

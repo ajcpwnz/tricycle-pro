@@ -65,10 +65,27 @@ Options for each: [R]esume, [D]iscard, [I]gnore and start new.
 Wait for the user's choice for each run before proceeding.
 
 - **Resume**: skip `parse-range` and `init` entirely — re-read the interrupted
-  run's `state.json` via `chain-run.sh get --run-id <id>`, identify the next
-  ticket whose status is not `completed`/`skipped`, and jump directly to the
-  Per-Ticket Loop starting from that ticket. Re-fetch Linear bodies for the
-  remaining tickets only.
+  run's `state.json` via `chain-run.sh get --run-id <id>`. Then **cross-check
+  each non-terminal ticket against actual git state** before deciding what to
+  do with it (TRI-30 FR-018):
+
+  For each ticket in the run:
+  - **`completed`, `skipped`, `failed`** → not touched, no action.
+  - **`merged`** → assume already shipped; no action.
+  - **`pushed`** → run `gh pr view <pr_url> --json state` and confirm the PR
+    state. If `MERGED`, mark `merged` then `completed` and continue. If still
+    `OPEN`, jump straight to the merge step of `## Orchestrator Push Step`
+    (skip the worker spawn AND the `git push`).
+  - **`committed`** → run `git -C <worktree_path> rev-parse HEAD` and compare
+    to `state.json`'s `commit_sha`. On match → jump straight to the Push
+    Approval step of `## Orchestrator Push Step` (skip the worker spawn).
+    On mismatch → surface the inconsistency to the user with three options:
+    `[R]e-spawn worker`, `[S]kip ticket`, `[A]bort chain`.
+  - **`in_progress`** → the worker died mid-run. Treat as `not_started` for
+    resume purposes (re-spawn a fresh worker for this ticket).
+  - **`not_started`** → spawn a fresh worker via the per-ticket loop.
+
+  Then re-fetch Linear bodies for the tickets that still need workers.
 - **Discard**: call `chain-run.sh close --run-id <id> --terminal-status aborted
   --reason "user discarded"`, then continue to Parse Range with the user's
   new input.
@@ -89,36 +106,6 @@ messages documented in
 
 On success the stdout JSON has `{"ids": [...], "count": N}`. Capture the
 `ids` array.
-
-## Runtime Probe
-
-**Critical**: verify the runtime supports `SendMessage` forwarding to
-running sub-agents **before** spawning any worker. If this fails, the
-feature cannot work — abort loudly instead of silently losing worker
-context on the first pause.
-
-Procedure:
-
-1. Spawn a throwaway probe agent:
-   ```
-   Agent({
-     name: "chain-probe",
-     subagent_type: "general-purpose",
-     description: "SendMessage probe for /trc.chain",
-     prompt: "Respond exactly with the token READY and then wait for my next message. When you receive any reply, exit immediately."
-   })
-   ```
-2. Immediately attempt:
-   ```
-   SendMessage({to: "chain-probe", message: "exit"})
-   ```
-3. If either step fails (tool unavailable, agent not addressable, error
-   response), STOP and output:
-   ```
-   Error: This runtime does not support SendMessage forwarding to paused
-   sub-agents, which is required for /trc.chain checkpoint relay.
-   Fall back to /trc.headless per ticket.
-   ```
 
 ## Linear Fetch
 
@@ -197,11 +184,16 @@ helper error, surface it and abort.
 
 ## Worker Brief Template
 
+Each worker is a fire-and-report sub-agent: it runs the full trc workflow
+to a local commit and exits. **It does not pause. It does not wait for
+input. It does not push.** The orchestrator (the parent conversation, with
+full tool access) handles everything from `git push` onward.
+
 Each worker receives a brief of the following shape (substitute the
 placeholders at spawn time):
 
 ```
-You are a /trc.chain worker for ticket <ticket-id>.
+You are a /trc.chain worker for ticket <ticket-id>. RUN TO COMMIT, THEN EXIT.
 
 TICKET: <ticket-id> — <title>
 
@@ -214,49 +206,65 @@ SHARED EPIC BRIEF:
 
 RUN DIRECTORY: specs/.chain-runs/<run-id>/
 
-TASK: Execute the full /trc.headless workflow end-to-end for this ticket.
+TASK: Run /trc.headless end-to-end for this ticket. After /trc.headless
+finishes (lint + test green, version bumped), explicitly create a local
+git commit with `git add -A && git commit -m "<ticket-id>: <one-line>"`,
+capture the commit SHA, emit a final progress event, return a structured
+JSON report as your final message, and EXIT. You will not be resumed.
 
-HARD REQUIREMENTS:
-1. PHASE EVENTS: At the START of each trc phase (specify, clarify, plan,
-   tasks, analyze, implement, push), overwrite the progress file:
-     printf '{"phase":"<phase>","started_at":"%s","ticket_id":"<ticket-id>"}\n' \
+HARD CONTRACT:
+
+1. NEVER PAUSE. Do not ask the user questions. Do not request push
+   approval. Do not wait for any reply. Sub-agent processes are
+   terminated when they return — any pause is a permanent hang. If
+   /trc.headless wants to clarify, auto-resolve with reasonable defaults
+   per its headless semantics; if you genuinely cannot proceed, return a
+   `status: "failed"` report and exit.
+
+2. NEVER PUSH. You do not run `git push`, `gh pr create`, or `gh pr
+   merge`. The orchestrator handles all remote-mutating commands AFTER
+   your report. Your authority ends at the local commit.
+
+3. PHASE EVENTS — END OF PHASE. At the END of each trc phase you finish
+   (specify, clarify, plan, tasks, analyze, implement), overwrite the
+   progress file with the *_complete suffix:
+     printf '{"phase":"<phase>_complete","completed_at":"%s","ticket_id":"<ticket-id>"}\n' \
        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
        > specs/.chain-runs/<run-id>/<ticket-id>.progress
-   Use the exact phase names above. When the run finishes, write phase=done.
+   Use exactly: specify_complete, clarify_complete, plan_complete,
+   tasks_complete, analyze_complete, implement_complete. After your
+   explicit `git commit`, write a final event with
+   `phase: "committed"` and include the commit_sha:
+     printf '{"phase":"committed","completed_at":"%s","ticket_id":"<ticket-id>","commit_sha":"<sha>"}\n' \
+       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+       > specs/.chain-runs/<run-id>/<ticket-id>.progress
 
-2. NEVER auto-approve pushes. Always pause and wait for explicit approval
-   via SendMessage, even though your parent is an orchestrator.
+4. QUALITY GATES inside /trc.headless: lint green, tests green, local
+   stack test for user-facing changes, QA cases added for user-facing
+   features. If any gate fails, do NOT commit; return `status: "failed"`.
 
-3. QUALITY GATES: lint must be green, tests must be green, local stack test
-   for user-facing changes, QA test cases added for user-facing features.
-   Do not request push approval until all gates pass.
+5. EXPLICIT COMMIT. After the gates pass and the version is bumped, run:
+     git add -A
+     git commit -m "<ticket-id>: <one-line summary of the change>"
+     COMMIT_SHA=$(git rev-parse HEAD)
+   Then emit the final `committed` progress event (step 3).
 
-4. FINAL REPORT: When you finish (or if you cannot proceed), return a
-   single structured JSON object as your final message, wrapped in
-   ```json ... ``` fences, with these fields:
+6. FINAL REPORT. Return exactly one structured JSON object as your final
+   message, wrapped in ```json ... ``` fences, with these fields:
      {
-       "ticket_id":  "<ticket-id>",
-       "status":     "completed" | "failed",
-       "branch":     "<branch-name or null>",
-       "pr_url":     "<github-pr-url or null>",
+       "ticket_id":   "<ticket-id>",
+       "status":      "committed" | "failed",
+       "branch":      "<branch-name or null>",
+       "commit_sha":  "<sha or null>",
+       "files_changed": ["path/a", "path/b", ...],
        "lint_status": "pass" | "fail" | "skipped",
        "test_status": "pass" | "fail" | "skipped",
-       "worker_error": null | "<short-error>",
-       "open_questions": ["<optional-caveat-1>", ...],
-       "summary":    "<one-paragraph human summary>"
+       "worker_error": null | "<short error>",
+       "open_questions": ["<optional caveat>", ...],
+       "summary":     "<one-paragraph human summary>"
      }
-   Follow the JSON block with nothing else. The orchestrator destructures
-   these fields and does NOT retain your conversation transcript.
-
-5. PAUSE BEHAVIOR: If the trc workflow pauses for a clarify question, a
-   plan-approval gate, a push-approval gate, or any other user input,
-   simply return the question as your pause message. The orchestrator will
-   forward my next reply to you via SendMessage; you resume with full
-   context. Do NOT synthesize an answer on my behalf for non-trivial pauses.
+   After this JSON block, write nothing else. Then exit.
 ```
-
-Keep this brief under ~400 words so it fits cleanly in the worker's
-initial prompt.
 
 ## Per-Ticket Loop
 
@@ -269,71 +277,161 @@ For each ticket ID in order:
      --status in_progress --started-now
    ```
 
-2. **Spawn the worker** using `Agent` with `name: "chain-worker-<ticket-id>"`.
-   This name MUST be unique across the chain run and MUST be used as the
-   `to:` field in all `SendMessage` calls for this ticket.
+2. **Spawn the worker** using `Agent` with
+   `name: "chain-worker-<ticket-id>"`, `subagent_type: "general-purpose"`,
+   in the foreground (NOT `run_in_background: true`), passing the Worker
+   Brief Template content as the `prompt`. This call **blocks** until the
+   worker returns. The worker is dead the moment it returns; you cannot
+   send it more messages.
 
-3. **Pause-relay loop**. The worker's return message is either a pause
-   (waiting for user input) or the final structured report. Distinguish:
+3. **Block on worker return.** When `Agent()` returns, parse the worker's
+   final message as a fenced ```json ... ``` block matching the Worker
+   Brief Template's report schema. Validate strictly:
 
-   - **Final report**: a fenced ```json``` block matching the schema in
-     the Worker Brief Template. Destructure it (branch, pr_url,
-     lint_status, test_status, open_questions, summary), discard the
-     conversation transcript (do NOT keep raw worker output beyond the
-     destructured fields — FR-014), and break out of the pause-relay loop.
+   - The block must exist.
+   - It must parse as JSON.
+   - It must contain at minimum: `ticket_id`, `status`, `branch`,
+     `commit_sha`, `lint_status`, `test_status`, `summary`.
+   - `status` must be exactly `"committed"` or `"failed"`.
 
-   - **Pause**: any other return shape — treat it as a question. Surface
-     to the user:
-     ```
-     [<ticket-id>] <question text>
-     ```
-     Wait for the user's reply. Then call:
-     ```
-     SendMessage({to: "chain-worker-<ticket-id>", message: "<user reply>"})
-     ```
-     The worker resumes with full context. Loop back to step 3.
+   On any validation failure, treat the worker as failed with
+   `worker_error: "malformed report"` and proceed to step 5b.
 
-4. **Progress display** (FR-022). Between `SendMessage` round-trips (or
-   while waiting for a worker that has not yet returned), read the
-   progress file and show:
-   ```
-   [<ticket-id>] → <phase> ⏱ <elapsed-seconds>s
-   ```
-   Re-read via:
+4. **Progress display** (FR-022). After spawning the worker but before
+   reading its return — and on every loop iteration if you're polling
+   between phases — read the progress file with:
    ```bash
    bash core/scripts/bash/chain-run.sh progress \
      --run-id "<run_id>" --ticket "<ticket-id>"
    ```
-   Update the display whenever the phase changes. Do NOT stream the
-   worker's transcript.
+   The phase value uses the `_complete` suffix (or `committed` for the
+   terminal event). Display as:
+   ```
+   [<ticket-id>] last completed: <phase>
+   ```
+   Do NOT stream the worker's transcript. Do NOT retain anything beyond
+   the destructured report fields (FR-014).
 
-5. **Record terminal state**:
+5. **Branch on report status**:
 
-   - **On completed report** (`status=completed`, lint/test=pass):
+   - **5a. status == "committed"**: the worker has made a local commit on
+     its feature branch and exited cleanly. Record the commit:
      ```bash
      bash core/scripts/bash/chain-run.sh update-ticket \
        --run-id "<run_id>" --ticket "<ticket-id>" \
-       --status completed --finished-now \
-       --branch "<branch>" --pr "<pr_url>" \
-       --lint pass --test pass
+       --status committed --commit-sha "<commit_sha>" \
+       --branch "<branch>" \
+       --lint "<lint_status>" --test "<test_status>"
      ```
-     Continue to the next ticket.
+     Then proceed to **`## Orchestrator Push Step`** below for this
+     ticket.
 
-   - **On failed report** (`status=failed`, OR lint/test=fail, OR
-     worker_error non-null, OR worker returned an error instead of a
-     structured report): update as `failed`, **immediately close the run**
-     with terminal-status `failed`, stop the chain, and jump to Summary:
+   - **5b. status == "failed"** (OR malformed report, OR `worker_error`
+     non-null, OR `lint_status == "fail"`, OR `test_status == "fail"`):
+     mark the ticket failed, close the run, stop the chain.
      ```bash
      bash core/scripts/bash/chain-run.sh update-ticket \
        --run-id "<run_id>" --ticket "<ticket-id>" \
        --status failed --finished-now \
+       --branch "<branch or omit>" \
        --lint "<lint_status>" --test "<test_status>"
      bash core/scripts/bash/chain-run.sh close \
        --run-id "<run_id>" --terminal-status failed \
-       --reason "<short-reason>"
+       --reason "<short reason>"
      ```
-     Do NOT spawn a worker for any remaining ticket. Leave them
-     `not_started`. Per FR-012: stop-on-failure means **stop**.
+     Do NOT spawn a worker for any remaining ticket. Jump to
+     `## Summary`. Per FR-012: stop-on-failure means **stop**.
+
+## Orchestrator Push Step
+
+This step runs **only** when a worker reports `status: "committed"`. The
+orchestrator (you, in the parent conversation, with full tool access)
+handles the entire push/PR/merge cycle in plain dialog with the user.
+No sub-agent message-forwarding is involved. The worker is already dead.
+
+1. **Print one-line summary** to the user, derived from the worker's
+   report:
+   ```
+   [<ticket-id>] <commit-sha-short> — <files-changed-count> files — lint:<status> test:<status>
+   <one-paragraph summary from the report>
+
+   Push <ticket-id>? (yes / no)
+   ```
+
+2. **Wait for the user's reply** in plain dialog. This is a normal user
+   message — you read it from the conversation, not from any tool call.
+
+3. **On `no`** (or any rejection):
+   - Stop the chain. Leave the ticket as `committed` in state.json. Leave
+     the local commit and worktree intact for the user to handle manually.
+   - Call `chain-run.sh close --terminal-status aborted --reason "user
+     declined push on <ticket-id>"`.
+   - Jump to `## Summary`.
+
+4. **On `yes`** (or any approval):
+
+   a. **`git push`** the worker's branch to origin:
+      ```bash
+      git -C "<worktree_path>" push -u origin "<branch>"
+      ```
+      On failure (non-zero exit), surface the error, mark the ticket
+      `failed`, `close --terminal-status failed --reason "git push: <err>"`,
+      jump to `## Summary`.
+
+   b. **`gh pr create`** targeting `push.pr_target` from
+      `tricycle.config.yml`:
+      ```bash
+      gh pr create --base "<pr_target>" --head "<branch>" \
+        --title "<ticket-id>: <one-line>" \
+        --body "<auto-generated body referencing the ticket and summary>"
+      ```
+      Capture the PR URL. Mark the ticket `pushed`:
+      ```bash
+      bash core/scripts/bash/chain-run.sh update-ticket \
+        --run-id "<run_id>" --ticket "<ticket-id>" \
+        --status pushed --pr "<pr_url>"
+      ```
+      On failure of `gh pr create`, surface, mark `failed`, close, jump
+      to Summary.
+
+   c. **`gh pr merge`** if `push.auto_merge` is true. Use
+      `push.merge_strategy` (`squash`, `merge`, or `rebase`). On `squash`:
+      ```bash
+      gh pr merge "<pr_number>" --squash --delete-branch
+      ```
+      On success, mark the ticket `merged`:
+      ```bash
+      bash core/scripts/bash/chain-run.sh update-ticket \
+        --run-id "<run_id>" --ticket "<ticket-id>" --status merged
+      ```
+      On failure (conflicts, branch protection, blocked review), surface,
+      mark `failed`, close, jump to Summary.
+
+      If `push.auto_merge` is false, **stop here** with the PR URL and
+      instructions for the user; the ticket stays `pushed`. The chain
+      continues to the next ticket only if the user confirms.
+
+   d. **Worktree cleanup** after merge:
+      ```bash
+      git -C "<main-checkout>" worktree remove "<worktree_path>"
+      git -C "<main-checkout>" worktree prune
+      git -C "<main-checkout>" branch -d "<branch>"
+      ```
+      On failure, log a warning but continue — cleanup is best-effort.
+
+   e. **Mark `completed`**:
+      ```bash
+      bash core/scripts/bash/chain-run.sh update-ticket \
+        --run-id "<run_id>" --ticket "<ticket-id>" \
+        --status completed --finished-now
+      ```
+
+5. **Continue** the per-ticket loop with the next ticket.
+
+**Push Approval Invariant**: push approval is asked **once per ticket,
+every time**. Prior approvals never carry over. Even if the user approved
+5 pushes already in this chain run, the 6th still requires a fresh `yes`.
+There is no "approve all" shortcut. The orchestrator never auto-approves.
 
 ## Context Hygiene (FR-014)
 
@@ -354,19 +452,14 @@ The orchestrator MUST NOT retain:
 If you find yourself re-reading a worker's transcript, you are violating
 the context-hygiene contract.
 
-## Push Approval Invariant (FR-009)
-
-Push approval MUST be requested **once per ticket**. A prior approval in
-the same chain run does NOT carry over. The orchestrator NEVER auto-approves
-a push, even if the previous N pushes were all approved by the same user
-in the same session.
-
-This is enforced at two layers:
-
-1. The worker prompt above explicitly tells the worker to pause on push.
-2. The orchestrator pause-relay loop (step 3 of Per-Ticket Loop) never
-   bypasses a pause — every question the worker raises gets routed back to
-   the user.
+**FR-013 — workers are fire-and-report**: the orchestrator MUST NEVER
+attempt to send a follow-up message to a returned worker. Sub-agent
+processes are terminated when they return; any follow-up is delivered to
+a dead inbox and silently ignored. This is mechanically enforced by
+`tests/test-chain-run-no-pause-relay.sh`, which fails the build if the
+forbidden tool name ever reappears in this file. See
+`feedback_trc_chain_no_pause_relay` in user memory for the original
+incident that motivated this requirement.
 
 ## Summary
 

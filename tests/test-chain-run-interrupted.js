@@ -35,17 +35,19 @@ describe('chain-run.sh list-interrupted', () => {
   const runs = [];
   after(() => runs.forEach(cleanup));
 
-  it('returns the interrupted run with next_ticket_id', () => {
+  it('returns the interrupted run with next_ticket_id (TRI-30: committed advances current_index)', () => {
     const id = initRun(['TRI-2100', 'TRI-2101', 'TRI-2102']);
     runs.push(id);
-    run(`update-ticket --run-id ${id} --ticket TRI-2100 --status completed --finished-now --lint pass --test pass`);
+    // Walk TRI-2100 through the legal forward path to committed.
+    run(`update-ticket --run-id ${id} --ticket TRI-2100 --status in_progress`);
+    run(`update-ticket --run-id ${id} --ticket TRI-2100 --status committed --commit-sha sha1 --lint pass --test pass`);
 
     const r = run('list-interrupted');
     assert.equal(r.exit, 0);
     const j = JSON.parse(r.stdout);
     const found = j.runs.find((x) => x.run_id === id);
     assert.ok(found, 'run should be listed');
-    assert.equal(found.next_ticket_id, 'TRI-2101');
+    assert.equal(found.next_ticket_id, 'TRI-2101', 'TRI-30: current_index advances past committed tickets');
     assert.equal(found.current_index, 1);
   });
 

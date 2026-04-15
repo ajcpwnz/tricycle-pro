@@ -45,13 +45,13 @@ describe('chain-run.sh progress', () => {
     assert.equal(j.ticket_id, 'TRI-3100');
   });
 
-  it('reads current progress file content', () => {
+  it('reads current progress file content (TRI-30: end-of-phase events)', () => {
     const id = initRun(['TRI-3200']);
     runs.push(id);
     const runDir = path.join(CHAIN_RUNS_DIR, id);
     const event = {
-      phase: 'plan',
-      started_at: '2026-04-15T12:00:00Z',
+      phase: 'plan_complete',
+      completed_at: '2026-04-15T12:00:00Z',
       ticket_id: 'TRI-3200',
     };
     fs.writeFileSync(path.join(runDir, 'TRI-3200.progress'), JSON.stringify(event) + '\n');
@@ -59,8 +59,8 @@ describe('chain-run.sh progress', () => {
     const r = run(`progress --run-id ${id} --ticket TRI-3200`);
     assert.equal(r.exit, 0);
     const j = JSON.parse(r.stdout);
-    assert.equal(j.phase, 'plan');
-    assert.equal(j.started_at, '2026-04-15T12:00:00Z');
+    assert.equal(j.phase, 'plan_complete');
+    assert.equal(j.completed_at, '2026-04-15T12:00:00Z');
   });
 
   it('latest-write-wins (overwrite semantics)', () => {
@@ -68,9 +68,27 @@ describe('chain-run.sh progress', () => {
     runs.push(id);
     const runDir = path.join(CHAIN_RUNS_DIR, id);
     const pf = path.join(runDir, 'TRI-3300.progress');
-    fs.writeFileSync(pf, JSON.stringify({ phase: 'specify', ticket_id: 'TRI-3300' }) + '\n');
-    fs.writeFileSync(pf, JSON.stringify({ phase: 'implement', ticket_id: 'TRI-3300' }) + '\n');
+    fs.writeFileSync(pf, JSON.stringify({ phase: 'specify_complete', ticket_id: 'TRI-3300' }) + '\n');
+    fs.writeFileSync(pf, JSON.stringify({ phase: 'implement_complete', ticket_id: 'TRI-3300' }) + '\n');
     const j = JSON.parse(run(`progress --run-id ${id} --ticket TRI-3300`).stdout);
-    assert.equal(j.phase, 'implement');
+    assert.equal(j.phase, 'implement_complete');
+  });
+
+  it('TRI-30 final committed event includes commit_sha', () => {
+    const id = initRun(['TRI-3400']);
+    runs.push(id);
+    const runDir = path.join(CHAIN_RUNS_DIR, id);
+    const event = {
+      phase: 'committed',
+      completed_at: '2026-04-15T12:00:00Z',
+      ticket_id: 'TRI-3400',
+      commit_sha: 'abc123def',
+    };
+    fs.writeFileSync(path.join(runDir, 'TRI-3400.progress'), JSON.stringify(event) + '\n');
+    const r = run(`progress --run-id ${id} --ticket TRI-3400`);
+    assert.equal(r.exit, 0);
+    const j = JSON.parse(r.stdout);
+    assert.equal(j.phase, 'committed');
+    assert.equal(j.commit_sha, 'abc123def');
   });
 });

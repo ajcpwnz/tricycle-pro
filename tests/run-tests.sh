@@ -977,6 +977,13 @@ run_test "specs/.chain-runs/ is gitignored" bash -c '
   cd "'"$REPO_ROOT"'" && grep -q "specs/.chain-runs/" .gitignore
 '
 
+# ── chain-run.sh (TRI-30) ──
+
+echo ""
+echo "chain-run.sh (TRI-30):"
+
+run_test "FR-013 no pause-relay refs in trc.chain.md" bash "$REPO_ROOT/tests/test-chain-run-no-pause-relay.sh"
+
 # ── trc.review (TRI-28) ──
 
 echo ""
