@@ -1028,7 +1028,6 @@ cmd_update_self() {
 
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap 'rm -rf "$tmpdir"' RETURN
 
   curl -sL "$tarball_url" | tar xz -C "$tmpdir" --strip-components=1
 
@@ -1040,28 +1039,44 @@ cmd_update_self() {
   if [ "$remote_version" = "$VERSION" ]; then
     echo "Already up to date (v${VERSION})."
     echo ""
+    rm -rf "$tmpdir"
     return 0
   fi
 
   echo "Updating: v${VERSION:-unknown} → v${remote_version}"
 
-  # Copy new files over the toolkit root
-  cp -R "$tmpdir/bin/" "$TOOLKIT_ROOT/bin/"
-  cp "$tmpdir/VERSION" "$TOOLKIT_ROOT/VERSION"
-  [ -f "$tmpdir/install.sh" ] && cp "$tmpdir/install.sh" "$TOOLKIT_ROOT/install.sh"
+  # Hand the copy off to a standalone finalize script and `exec` into it,
+  # so the old bin/tricycle process is replaced BEFORE the rm -rf + cp -R
+  # over its own file tree. Without this, bash continues parsing the
+  # partially-overwritten script and emits "unexpected EOF" noise.
+  local finalize="$tmpdir/.tricycle-update-finalize.sh"
+  cat > "$finalize" <<'FINALIZE'
+#!/usr/bin/env bash
+set -e
+tmpdir="$1"
+toolkit_root="$2"
+remote_version="$3"
 
-  # Update core dirs (presets, generators, modules, core)
-  for dir in core generators modules presets; do
+cp -R "$tmpdir/bin/" "$toolkit_root/bin/"
+cp "$tmpdir/VERSION" "$toolkit_root/VERSION"
+[ -f "$tmpdir/install.sh" ] && cp "$tmpdir/install.sh" "$toolkit_root/install.sh"
+
+for dir in core generators modules presets; do
     if [ -d "$tmpdir/$dir" ]; then
-      rm -rf "$TOOLKIT_ROOT/$dir"
-      cp -R "$tmpdir/$dir" "$TOOLKIT_ROOT/$dir"
+        rm -rf "$toolkit_root/$dir"
+        cp -R "$tmpdir/$dir" "$toolkit_root/$dir"
     fi
-  done
+done
 
-  chmod +x "$TOOLKIT_ROOT/bin/tricycle" "$TOOLKIT_ROOT/bin/lib/"*.sh
+chmod +x "$toolkit_root/bin/tricycle" "$toolkit_root/bin/lib/"*.sh
 
-  echo "Updated to v${remote_version}."
-  echo ""
+rm -rf "$tmpdir"
+
+printf 'Updated to v%s.\n\n' "$remote_version"
+FINALIZE
+  chmod +x "$finalize"
+
+  exec "$finalize" "$tmpdir" "$TOOLKIT_ROOT" "$remote_version"
 }
 
 # ─── Hello World ─────────────────────────────────────────────────────────────
