@@ -36,6 +36,7 @@ check "$REPO_ROOT/core/commands/trc.chain.md" \
 check "$REPO_ROOT/core/commands/trc.headless.md" \
   "headless rename section"       "Session Rename (Fallback)" \
   "derive-branch-name invocation" "derive-branch-name.sh" \
-  "rename instruction"            "/rename"
+  "rename instruction"            "/rename" \
+  "headless still routes through /trc.specify (TRI-32 refresh depends on this)" "/trc.specify"
 
 echo "command-rename-fallback: OK"

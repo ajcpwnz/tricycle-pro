@@ -7,6 +7,9 @@
 #   13 = worktree.setup_script is not executable
 #   14 = worktree.setup_script exited non-zero
 #   15 = one or more worktree.env_copy paths missing after setup
+# Exit codes reserved for the base-branch refresh step (see TRI-32):
+#   20 = dirty working tree on base branch (cannot fast-forward safely)
+#   21 = local base diverged from origin or non-fast-forward
 # These codes must not be reused for anything else.
 
 set -e
@@ -14,6 +17,7 @@ set -e
 JSON_MODE=false
 NO_CHECKOUT=false
 PROVISION_WORKTREE=false
+SKIP_BASE_REFRESH=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
 STYLE=""
@@ -23,6 +27,12 @@ PACKAGE_MANAGER="npm"
 SETUP_SCRIPT=""
 ENV_COPY_ITEMS=""  # newline-separated
 ARGS=()
+
+# Honor the env-var opt-out (FR-011). The --no-base-refresh flag below sets
+# the same variable for the command-line path.
+if [ "${TRC_SKIP_BASE_REFRESH:-}" = "1" ]; then
+    SKIP_BASE_REFRESH=true
+fi
 i=1
 while [ $i -le $# ]; do
     arg="${!i}"
@@ -36,6 +46,9 @@ while [ $i -le $# ]; do
         --provision-worktree)
             PROVISION_WORKTREE=true
             NO_CHECKOUT=true  # provisioning owns worktree creation; main checkout stays put
+            ;;
+        --no-base-refresh)
+            SKIP_BASE_REFRESH=true
             ;;
         --short-name)
             if [ $((i + 1)) -gt $# ]; then
@@ -104,7 +117,7 @@ while [ $i -le $# ]; do
             ISSUE_PREFIX="$next_arg"
             ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--style <style>] [--issue <id>] [--prefix <prefix>] [--no-checkout] [--provision-worktree] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--style <style>] [--issue <id>] [--prefix <prefix>] [--no-checkout] [--provision-worktree] [--no-base-refresh] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json                Output in JSON format"
@@ -116,6 +129,9 @@ while [ $i -le $# ]; do
             echo "  --no-checkout         Create branch without checking it out (for worktree workflows)"
             echo "  --provision-worktree  Create worktree, copy .trc/, install deps, run worktree.setup_script, and"
             echo "                        verify worktree.env_copy paths (implies --no-checkout). See TRI-26."
+            echo "  --no-base-refresh     Skip the automatic 'git fetch + fast-forward' of the configured base"
+            echo "                        branch before creating the new branch. Equivalent to TRC_SKIP_BASE_REFRESH=1."
+            echo "                        Useful when deliberately branching off a historical SHA. See TRI-32."
             echo "  --help, -h            Show this help message"
             echo ""
             echo "Examples:"
@@ -335,6 +351,104 @@ read_project_name() {
     ' "$config_file"
 }
 
+# Read push.pr_target from tricycle.config.yml. Mirrors read_project_name.
+# Prints empty on absence; callers default to "main".
+read_pr_target() {
+    local config_file="$1"
+    [ -f "$config_file" ] || return 0
+    awk '
+        /^push:/ { in_p=1; next }
+        /^[a-zA-Z]/ && !/^[[:space:]]/ { in_p=0 }
+        in_p && /^[[:space:]]+pr_target:/ {
+            sub(/^[[:space:]]+pr_target:[[:space:]]*/, "")
+            gsub(/^"|"$/, "")
+            gsub(/^'\''|'\''$/, "")
+            sub(/[[:space:]]*$/, "")
+            print
+            exit
+        }
+    ' "$config_file"
+}
+
+# refresh_base_branch REPO_ROOT BASE_BRANCH
+# Fast-forward local <base> from origin before a new feature branch is cut.
+# See specs/TRI-32-pull-fresh-base/contracts/refresh-base-branch.md.
+#
+# Exit codes used inside (propagated via exit on halt):
+#   20 = dirty working tree on base branch
+#   21 = divergent local base (non-fast-forward)
+# Otherwise returns 0, including for all graceful-skip paths.
+refresh_base_branch() {
+    local repo_root="$1"
+    local base="$2"
+
+    # Opt-out: flag or env var (FR-011).
+    if [ "$SKIP_BASE_REFRESH" = "true" ]; then
+        return 0
+    fi
+
+    # Not-a-git-repo → silent no-op (FR-007).
+    if [ "${HAS_GIT:-false}" != "true" ]; then
+        return 0
+    fi
+
+    # Reachability probe. On network-class failures: warn, skip (FR-006).
+    local probe_err
+    probe_err=$(git -C "$repo_root" fetch --dry-run origin "$base" 2>&1) || {
+        case "$probe_err" in
+            *"Could not resolve host"*|*"Connection refused"*|*"Operation timed out"*|\
+            *"unable to access"*|*"Authentication failed"*|*"Network is unreachable"*|\
+            *"Could not read from remote"*|*"timed out"*)
+                >&2 echo "[specify] Warning: origin unreachable; skipping base-branch refresh. New branch will be cut from local ${base}."
+                return 0
+                ;;
+            *)
+                # Real fetch error (missing ref, auth/perm problem on a valid
+                # remote, server-side rejection). Surface and halt — do NOT
+                # silently proceed with stale local state.
+                >&2 echo "Error: git fetch origin ${base} failed:"
+                >&2 echo "$probe_err"
+                exit 21
+                ;;
+        esac
+    }
+
+    local current_branch sha_before sha_after
+    current_branch=$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    sha_before=$(git -C "$repo_root" rev-parse --verify -q "$base" 2>/dev/null || echo "")
+
+    if [ "$current_branch" = "$base" ]; then
+        # On base — dirty-tree guard then ff-only pull (FR-003, FR-004).
+        if ! git -C "$repo_root" diff-index --quiet HEAD -- 2>/dev/null \
+             || ! git -C "$repo_root" diff-files --quiet 2>/dev/null; then
+            >&2 echo "Error: Working tree on ${base} has uncommitted changes. Commit, stash, or discard them and retry."
+            >&2 echo "Dirty paths:"
+            git -C "$repo_root" status --porcelain=v1 2>/dev/null | sed 's/^/  /' >&2
+            exit 20
+        fi
+        local pull_err
+        pull_err=$(git -C "$repo_root" pull --ff-only origin "$base" 2>&1) || {
+            >&2 echo "Error: local ${base} cannot fast-forward from origin/${base} (diverged or non-FF). Resolve manually and retry."
+            >&2 echo "$pull_err"
+            exit 21
+        }
+    else
+        # Off base — direct ref update, no HEAD switch (FR-008).
+        local fetch_err
+        fetch_err=$(git -C "$repo_root" fetch origin "${base}:${base}" 2>&1) || {
+            >&2 echo "Error: local ${base} cannot fast-forward from origin/${base} (diverged or non-FF). Resolve manually and retry."
+            >&2 echo "$fetch_err"
+            exit 21
+        }
+    fi
+
+    sha_after=$(git -C "$repo_root" rev-parse --verify -q "$base" 2>/dev/null || echo "")
+    if [ -n "$sha_after" ] && [ "$sha_before" != "$sha_after" ]; then
+        >&2 echo "[specify] Base branch ${base} fast-forwarded to ${sha_after:0:12}"
+    fi
+    return 0
+}
+
 # Full --provision-worktree pipeline. Reserved exit codes 10-15 (see header).
 # Arguments:
 #   $1 = worktree absolute path
@@ -420,6 +534,16 @@ provision_worktree() {
         fi
     fi
 }
+
+# TRI-32: fast-forward local base before cutting the new branch so every
+# kickoff (specify/headless/chain worker) starts from fresh upstream state.
+# This runs AFTER the helper-function definitions above and BEFORE branch
+# creation below — placement enforced by bash's top-to-bottom parse.
+if [ "$HAS_GIT" = true ]; then
+    BASE_BRANCH=$(read_pr_target "$REPO_ROOT/tricycle.config.yml")
+    [ -z "$BASE_BRANCH" ] && BASE_BRANCH="main"
+    refresh_base_branch "$REPO_ROOT" "$BASE_BRANCH"
+fi
 
 if [ "$HAS_GIT" = true ]; then
     if [ "$NO_CHECKOUT" = true ]; then

@@ -1011,6 +1011,14 @@ run_test "tricycle generate settings registers UserPromptSubmit hook (tests/test
 run_test "kickoff commands carry Session Rename fallback (tests/test-command-rename-fallback.sh)" \
   bash "$REPO_ROOT/tests/test-command-rename-fallback.sh"
 
+# ── Pull fresh base branch (TRI-32) ──
+
+echo ""
+echo "Pull fresh base branch (TRI-32):"
+
+run_test "refresh_base_branch covers stale/fresh/dirty/offline/diverged/skip/nogit/chain-proxy (tests/test-refresh-base-branch.sh)" \
+  bash "$REPO_ROOT/tests/test-refresh-base-branch.sh"
+
 # ── trc.review (TRI-28) ──
 
 echo ""
