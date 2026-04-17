@@ -1117,6 +1117,11 @@ cmd_dogfood() {
     [ -d "$src_dir" ] || continue
 
     while IFS= read -r src_path; do
+      # Skip OS-noise files regardless of where they appear — never
+      # mirror them into .trc/ or .claude/.
+      case "$(basename "$src_path")" in
+        .DS_Store|Thumbs.db) continue ;;
+      esac
       local entry="${src_path#"$src_dir"/}"
       local dest_rel_path="$dest_rel/$entry"
       local dest_path="$CWD/$dest_rel_path"
@@ -1137,12 +1142,17 @@ cmd_dogfood() {
 
   # Unmapped-core guard (FR-008): collect top-level dirs directly under
   # core/ that no mapping claims. `core/skills/` is intentionally excluded
-  # (FR-007) — skills have their own upstream-fetch flow.
+  # (FR-007) — skills have their own upstream-fetch flow. OS noise
+  # (.DS_Store, Thumbs.db) is silently skipped — never a real "new
+  # directory needs mapping" signal.
   local unmapped_lines=""
   if [ -d "$CWD/core" ]; then
     while IFS= read -r entry; do
       # Only flag top-level directories and top-level files under core/.
       [ "$entry" = "core/skills" ] && continue
+      case "$entry" in
+        core/.DS_Store|core/Thumbs.db) continue ;;
+      esac
       local found=0
       for src in "${mapped_sources[@]}"; do
         case "$entry" in
@@ -1194,6 +1204,10 @@ cmd_dogfood() {
     [ -d "$src_dir" ] || continue
 
     while IFS= read -r src_path; do
+      # Skip OS-noise files (mirrors dry-run pass above).
+      case "$(basename "$src_path")" in
+        .DS_Store|Thumbs.db) continue ;;
+      esac
       local entry="${src_path#"$src_dir"/}"
       local dest_rel_path="$dest_rel/$entry"
       local dest_path="$CWD/$dest_rel_path"

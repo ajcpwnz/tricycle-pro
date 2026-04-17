@@ -123,6 +123,21 @@ printf '%s' "$out" | grep -q "core/uncharted" \
     && { echo "FAIL [e]: unmapped file was silently mirrored"; exit 1; } || true
 rm -rf "$META/core/uncharted"
 
+# ── Case (e2): .DS_Store noise is silently skipped ────────────────────────
+
+# Plant OS-noise files at top-level and nested. Neither should appear in
+# the dry-run output, the unmapped warning, or the mirror after --yes.
+dd if=/dev/zero of="$META/core/.DS_Store" bs=1 count=8 2>/dev/null
+dd if=/dev/zero of="$META/core/scripts/bash/.DS_Store" bs=1 count=8 2>/dev/null
+out=$(cd "$META" && bash "$META/bin/tricycle" dogfood 2>&1)
+if printf '%s' "$out" | grep -q "DS_Store"; then
+    echo "FAIL [e2]: dry-run mentions .DS_Store; got:"; echo "$out"; exit 1
+fi
+(cd "$META" && bash "$META/bin/tricycle" dogfood --yes >/dev/null 2>&1)
+[ -f "$META/.trc/scripts/bash/.DS_Store" ] \
+    && { echo "FAIL [e2]: .DS_Store was mirrored into .trc/"; exit 1; } || true
+rm -f "$META/core/.DS_Store" "$META/core/scripts/bash/.DS_Store"
+
 # ── Case (f): exec bit restored by --yes (FR-005) ─────────────────────────
 
 chmod -x "$META/.trc/scripts/bash/helper.sh"
