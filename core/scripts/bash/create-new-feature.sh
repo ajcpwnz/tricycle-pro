@@ -268,117 +268,53 @@ cd "$REPO_ROOT"
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
-# Function to generate branch name with stop word filtering and length filtering
-generate_branch_name() {
-    local description="$1"
+# --- Delegate slug + branch-name derivation to the shared helper ---
+# derive-branch-name.sh is the single source of truth for slug generation
+# and style dispatch (see TRI-31 FR-007). Keeping a shared helper means a
+# future change to branching rules propagates to both branch creation here
+# and session-label derivation in .claude/hooks/rename-on-kickoff.sh.
 
-    # Common stop words to filter out
-    local stop_words="^(i|a|an|the|to|for|of|in|on|at|by|with|from|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|this|that|these|those|my|your|our|their|want|need|add|get|set)$"
-
-    # Convert to lowercase and split into words
-    local clean_name=$(echo "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/ /g')
-
-    # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
-    local meaningful_words=()
-    for word in $clean_name; do
-        # Skip empty words
-        [ -z "$word" ] && continue
-
-        # Keep words that are NOT stop words AND (length >= 3 OR are potential acronyms)
-        if ! echo "$word" | grep -qiE "$stop_words"; then
-            if [ ${#word} -ge 3 ]; then
-                meaningful_words+=("$word")
-            elif echo "$description" | grep -q "\b${word^^}\b"; then
-                # Keep short words if they appear as uppercase in original (likely acronyms)
-                meaningful_words+=("$word")
-            fi
-        fi
-    done
-
-    # If we have meaningful words, use first 3-4 of them
-    if [ ${#meaningful_words[@]} -gt 0 ]; then
-        local max_words=3
-        if [ ${#meaningful_words[@]} -eq 4 ]; then max_words=4; fi
-
-        local result=""
-        local count=0
-        for word in "${meaningful_words[@]}"; do
-            if [ $count -ge $max_words ]; then break; fi
-            if [ -n "$result" ]; then result="$result-"; fi
-            result="$result$word"
-            count=$((count + 1))
-        done
-        echo "$result"
-    else
-        # Fallback to original logic if no meaningful words found
-        local cleaned=$(clean_branch_name "$description")
-        echo "$cleaned" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//'
-    fi
-}
-
-# Generate branch suffix (slug) from short name or description
-if [ -n "$SHORT_NAME" ]; then
-    BRANCH_SUFFIX=$(clean_branch_name "$SHORT_NAME")
-else
-    BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
+DERIVE_SH="$SCRIPT_DIR/derive-branch-name.sh"
+if [ ! -x "$DERIVE_SH" ]; then
+    >&2 echo "Error: derive-branch-name.sh not found or not executable at $DERIVE_SH"
+    exit 1
 fi
 
-# --- Style-aware branch name generation ---
+DERIVE_ARGS=(--style "$STYLE")
+[ -n "$SHORT_NAME" ]     && DERIVE_ARGS+=(--short-name "$SHORT_NAME")
+[ -n "$BRANCH_NUMBER" ]  && DERIVE_ARGS+=(--number "$BRANCH_NUMBER")
+[ -n "$ISSUE_ID" ]       && DERIVE_ARGS+=(--issue "$ISSUE_ID")
+[ -n "$ISSUE_PREFIX" ]   && DERIVE_ARGS+=(--prefix "$ISSUE_PREFIX")
 
-generate_ordered_branch() {
-    if [ -z "$BRANCH_NUMBER" ]; then
-        if [ "$HAS_GIT" = true ]; then
-            BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
-        else
-            local highest
-            highest=$(get_highest_from_specs "$SPECS_DIR")
-            BRANCH_NUMBER=$((highest + 1))
-        fi
-    fi
-    FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
-    BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
-}
+set +e
+BRANCH_NAME=$(REPO_ROOT="$REPO_ROOT" bash "$DERIVE_SH" "${DERIVE_ARGS[@]}" "$FEATURE_DESCRIPTION" 2>/tmp/.derive_err_$$)
+DERIVE_RC=$?
+set -e
+if [ $DERIVE_RC -ne 0 ]; then
+    # Propagate the helper's stderr and exit code so callers see the same
+    # "Issue number required…" kind of message they had before.
+    cat /tmp/.derive_err_$$ >&2 2>/dev/null || true
+    rm -f /tmp/.derive_err_$$
+    exit $DERIVE_RC
+fi
+rm -f /tmp/.derive_err_$$
 
-generate_feature_name_branch() {
-    FEATURE_NUM=""
-    BRANCH_NAME="$BRANCH_SUFFIX"
-}
-
-generate_issue_number_branch() {
-    local issue=""
-    if [ -n "$ISSUE_ID" ]; then
-        issue="$ISSUE_ID"
-    elif [ -n "$ISSUE_PREFIX" ]; then
-        issue=$(echo "$FEATURE_DESCRIPTION" | grep -ioE "${ISSUE_PREFIX}-[0-9]+" | head -1)
-    else
-        issue=$(echo "$FEATURE_DESCRIPTION" | grep -oE '[A-Z]+-[0-9]+' | head -1)
-    fi
-    if [ -z "$issue" ]; then
-        echo "Error: Issue number required for issue-number style. Use --issue <ID> or include it in the description (e.g., TRI-042)." >&2
-        exit 2
-    fi
-    # Normalize issue to uppercase
-    issue=$(echo "$issue" | tr '[:lower:]' '[:upper:]')
-    FEATURE_NUM="$issue"
-    BRANCH_NAME="${issue}-${BRANCH_SUFFIX}"
-}
-
-# Dispatch by style
+# Derive FEATURE_NUM from the computed branch name + style, preserving
+# the JSON contract that downstream templates and tests depend on.
 case "$STYLE" in
-    feature-name) generate_feature_name_branch ;;
-    issue-number) generate_issue_number_branch ;;
-    ordered)      generate_ordered_branch ;;
+    feature-name)
+        FEATURE_NUM=""
+        ;;
+    issue-number)
+        # BRANCH_NAME = "${ISSUE}-${SUFFIX}" where ISSUE matches [A-Z0-9]+-[0-9]+.
+        FEATURE_NUM=$(echo "$BRANCH_NAME" | grep -oE '^[A-Z][A-Z0-9]*-[0-9]+' | head -1)
+        ;;
+    ordered)
+        FEATURE_NUM=$(echo "$BRANCH_NAME" | grep -oE '^[0-9]{3}' | head -1)
+        # Keep BRANCH_NUMBER in sync for any downstream code that reads it.
+        BRANCH_NUMBER=$((10#$FEATURE_NUM))
+        ;;
 esac
-
-# GitHub enforces a 244-byte limit on branch names
-MAX_BRANCH_LENGTH=244
-if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
-    ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME=$(echo "$BRANCH_NAME" | cut -c1-$MAX_BRANCH_LENGTH | sed 's/-$//')
-    >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
-    >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
-    >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
-fi
 
 # Read project.name from tricycle.config.yml (needed for worktree path).
 # Minimal single-purpose parse; only used when PROVISION_WORKTREE=true.

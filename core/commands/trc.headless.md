@@ -12,6 +12,33 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Session Rename (Fallback)
+
+**Primary mechanism**: the `UserPromptSubmit` hook at
+`.claude/hooks/rename-on-kickoff.sh` has already renamed the session by the
+time you see this prompt. When the hook fires, this block is a silent
+no-op.
+
+This block is the fallback for hosts/installs without the hook.
+
+**First thing done — before any file, git, or Linear side effect:**
+
+1. Derive the target session label:
+   ```bash
+   .trc/scripts/bash/derive-branch-name.sh \
+     --style "<configured-style>" \
+     [--prefix "<configured-prefix>"] [--issue "<ticket-id-if-known>"] \
+     "$ARGUMENTS"
+   ```
+   (Do NOT pass `--short-name` — match the hook's auto-derived slug for
+   idempotency.)
+2. If `$CLAUDE_SESSION_TITLE` differs from the target, emit
+   `/rename <target>` as your first output before any tool call. If
+   already equal, skip silently.
+3. When this command internally triggers `/trc.specify`'s Step 0.5 later
+   in the flow, that step MUST detect the label already matches and be a
+   no-op — the rename is performed **once**, at the outermost invocation.
+
 ## Pre-Flight Validation
 
 Before executing the chain, validate all prerequisites:

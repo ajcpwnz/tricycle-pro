@@ -430,6 +430,14 @@ cmd_generate_settings() {
         "hooks": [{"type": "command", "command": ".claude/hooks/post-implement-lint.sh", "timeout": 5}]
       }'
 
+  # UserPromptSubmit: rename-on-kickoff (TRI-31). First — and currently only —
+  # UserPromptSubmit hook; future additions slot in after this entry so the
+  # rename happens before any other pre-turn side effect.
+  local prompt_hooks='
+      {
+        "hooks": [{"type": "command", "command": ".claude/hooks/rename-on-kickoff.sh", "timeout": 5}]
+      }'
+
   # SessionStart: session-context (constitution + extra files)
   local session_hooks=""
   local inject_constitution
@@ -484,6 +492,8 @@ cmd_generate_settings() {
     "PreToolUse": [${pre_hooks}
     ],
     "PostToolUse": [${post_hooks}
+    ],
+    "UserPromptSubmit": [${prompt_hooks}
     ]${session_hooks}
   }
 }

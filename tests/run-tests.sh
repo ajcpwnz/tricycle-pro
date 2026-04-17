@@ -991,6 +991,23 @@ run_test "trc.chain.md contract rules present (tests/test-chain-md-contract.sh)"
 run_test "tricycle update adopts unmanaged files (tests/test-tricycle-update-adopt.sh)" \
   bash "$REPO_ROOT/tests/test-tricycle-update-adopt.sh"
 
+# ── Session rename on kickoff (TRI-31) ──
+
+echo ""
+echo "Session rename hook (TRI-31):"
+
+run_test "derive-branch-name parity with create-new-feature (tests/test-derive-branch-name.sh)" \
+  bash "$REPO_ROOT/tests/test-derive-branch-name.sh"
+
+run_test "rename-on-kickoff hook behavior (tests/test-rename-hook.sh)" \
+  bash "$REPO_ROOT/tests/test-rename-hook.sh"
+
+run_test "tricycle generate settings registers UserPromptSubmit hook (tests/test-generate-settings-rename-hook.sh)" \
+  bash "$REPO_ROOT/tests/test-generate-settings-rename-hook.sh"
+
+run_test "kickoff commands carry Session Rename fallback (tests/test-command-rename-fallback.sh)" \
+  bash "$REPO_ROOT/tests/test-command-rename-fallback.sh"
+
 # ── trc.review (TRI-28) ──
 
 echo ""

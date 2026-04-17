@@ -28,9 +28,34 @@ never reimplements the trc workflow itself — workers do that via
 workflows in one conversation — quality collapses by ticket 3+ from context
 pollution and stale assumptions.
 
+## Session Rename (Fallback)
+
+**Primary mechanism**: the `UserPromptSubmit` hook at
+`.claude/hooks/rename-on-kickoff.sh` has already renamed the orchestrator
+session to a `trc-chain-<range>` label before this prompt is seen. When the
+hook fires, this block is a silent no-op.
+
+This block is the fallback for hosts/installs without the hook.
+
+**First thing done — before any Linear fetch, user confirmation, or worker
+spawn:**
+
+1. Compute the chain-scoped label from `$ARGUMENTS`:
+   - If it's a range form (`X..Y`): label = `trc-chain-X..Y`.
+   - If it's a comma list with N tokens: label = `trc-chain-<first>+<N-1>`.
+   - Singleton: label = `trc-chain-<only>+0`.
+2. Read `$CLAUDE_SESSION_TITLE` if available.
+3. If the current label differs from the computed target, emit
+   `/rename <target>` as the first text in your turn, before any tool call.
+   If equal, skip silently.
+
+Keep this label for the entire chain run — do NOT change it per-ticket.
+Workers handle their own per-ticket rename (see Worker Brief HARD CONTRACT
+rule on first action, below).
+
 ## Pre-Flight Validation
 
-Before doing anything:
+Before doing anything ELSE (after the rename above):
 
 1. **Empty input check**. If `$ARGUMENTS` is empty or only whitespace, STOP
    and output:
@@ -243,6 +268,16 @@ capture the commit SHA, emit a final progress event, return a structured
 JSON report as your final message, and EXIT. You will not be resumed.
 
 HARD CONTRACT:
+
+0. First action: `/rename <ticket-id-branch-name>`. The very first text you
+   emit in this worker conversation MUST be `/rename <branch-name>` (where
+   `<branch-name>` is the branch the orchestrator pre-provisioned or the
+   one `create-new-feature.sh` will produce). This matches the session
+   label convention established for solo `/trc.specify` runs and makes the
+   worker identifiable in the Claude Code session list while it's
+   in-flight. If the host does not honor `/rename` inside a sub-agent
+   conversation, continue anyway — this is an explicit graceful
+   degradation per TRI-31 SC-005. Do NOT abort on rename failure.
 
 1. NEVER PAUSE. Do not ask the user questions. Do not request push
    approval. Do not wait for any reply. Sub-agent processes are

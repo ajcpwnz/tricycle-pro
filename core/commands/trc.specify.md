@@ -19,6 +19,43 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 
+## Session Rename (Fallback)
+
+**Primary mechanism**: the `UserPromptSubmit` hook at
+`.claude/hooks/rename-on-kickoff.sh` has already renamed the session by the
+time you see this prompt — in that case this block is a silent no-op.
+
+This block exists only as a fallback for installs where the hook is not
+registered (older `tricycle init` that predates TRI-31 and hasn't run
+`tricycle update` + `tricycle generate settings`) or hosts that do not honor
+`hookSpecificOutput.sessionTitle`.
+
+**First thing done — before any file, git, or Linear side effect:**
+
+1. Derive the target session label by invoking the shared helper:
+   ```bash
+   .trc/scripts/bash/derive-branch-name.sh \
+     --style "<configured-style>" \
+     [--prefix "<configured-prefix>"] [--issue "<ticket-id-if-known>"] \
+     "$ARGUMENTS"
+   ```
+   (Do NOT pass `--short-name` — the helper's auto-derived slug is the
+   label the hook uses, and this fallback must produce the same label for
+   idempotency.)
+2. Read the current session label from `$CLAUDE_SESSION_TITLE` if
+   available.
+3. If the current label differs from the derived target, emit
+   `/rename <target>` as the first text in your turn, before any tool
+   call. If the current label matches (or if `$CLAUDE_SESSION_TITLE` is
+   unset and you cannot tell), skip silently.
+4. If the configured style is `issue-number` and the description contains
+   no ticket ID yet, defer this block until Step 2 has asked the user for
+   the ID, then come back and rename before running `create-new-feature.sh`.
+
+This step must complete (or be deferred per rule 4) before the
+"Worktree Setup (Detection)" block below.
+
+
 ## Worktree Setup (Detection)
 
 Before creating the feature branch, determine whether you need to work in a git worktree.
