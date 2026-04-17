@@ -31,12 +31,24 @@ if [ -f "$TOOLKIT_ROOT/VERSION" ]; then
   VERSION=$(cat "$TOOLKIT_ROOT/VERSION" | tr -d '[:space:]')
 fi
 
+# Shared mapping table consumed by both cmd_update and cmd_dogfood (TRI-33).
+# Single source of truth for core/<src> → consumer-path mirroring.
+# Format: "src-under-repo-root:dst-under-repo-root".
+TRICYCLE_MANAGED_PATHS=(
+  "core/commands:.claude/commands"
+  "core/templates:.trc/templates"
+  "core/scripts/bash:.trc/scripts/bash"
+  "core/hooks:.claude/hooks"
+  "core/blocks:.trc/blocks"
+)
+
 PRESET=""
 DRY_RUN=0
 HELP=0
 SHOW_VERSION=0
 STATUS_JSON=0
 STATUS_ALL=0
+DOGFOOD_YES=0
 POSITIONALS=()
 
 while [ $# -gt 0 ]; do
@@ -48,6 +60,7 @@ while [ $# -gt 0 ]; do
     --dry-run) DRY_RUN=1; shift ;;
     --json) STATUS_JSON=1; shift ;;
     --all)  STATUS_ALL=1; shift ;;
+    -y|--yes) DOGFOOD_YES=1; shift ;;
     -h|--help) HELP=1; shift ;;
     -v|--version) SHOW_VERSION=1; shift ;;
     -*) error "Unknown option: $1"; exit 1 ;;
@@ -75,6 +88,7 @@ Usage:
   tricycle generate <target>          Generate files (claude-md, settings, gitignore, mcp)
   tricycle update [--dry-run]         Update core files to latest version
   tricycle update-self                Update the tricycle CLI itself
+  tricycle dogfood [--yes]            Mirror this repo's core/ into .trc/ and .claude/ (contributor-only)
   tricycle assemble [--dry-run]        Assemble commands from blocks based on workflow config
   tricycle skills list                 List installed skills with source and status
   tricycle status [<filter>] [--json] [--all]  Show workflow progress (default: active worktrees only)
@@ -84,6 +98,7 @@ Usage:
 Options:
   --preset <name>     Use a preset configuration (monorepo-turborepo, nextjs-prisma, single-app)
   --dry-run           Show what would change without making changes
+  -y, --yes           Apply changes (used by \`tricycle dogfood\`; default is dry-run)
   -v, --version       Show version
   -h, --help          Show this help message
 
@@ -735,13 +750,7 @@ cmd_update() {
   local updated=0 skipped=0 added=0 adopted=0
 
   local src_rel dest_rel
-  for mapping in \
-    "core/commands:.claude/commands" \
-    "core/templates:.trc/templates" \
-    "core/scripts/bash:.trc/scripts/bash" \
-    "core/hooks:.claude/hooks" \
-    "core/blocks:.trc/blocks"; do
-
+  for mapping in "${TRICYCLE_MANAGED_PATHS[@]}"; do
     src_rel="${mapping%%:*}"
     dest_rel="${mapping#*:}"
     local src_dir="$TOOLKIT_ROOT/$src_rel"
@@ -1079,6 +1088,140 @@ FINALIZE
   exec "$finalize" "$tmpdir" "$TOOLKIT_ROOT" "$remote_version"
 }
 
+# ─── Dogfood (TRI-33) ────────────────────────────────────────────────────────
+
+# Mirror this repo's own core/ into .trc/ and .claude/ and adopt the files
+# into .tricycle.lock. Contributor-only; silent no-op in consumer repos.
+# See specs/TRI-33-dogfood-core-sync/contracts/dogfood.md.
+cmd_dogfood() {
+  if [ ! -d "$CWD/core" ]; then
+    echo "Not a tricycle-pro meta-repo (no core/ directory at repo root); nothing to do."
+    return 0
+  fi
+
+  load_lock
+  local do_write=$DOGFOOD_YES
+  local to_add_count=0 to_write_count=0
+  local to_add_lines="" to_write_lines=""
+
+  local mapping src_rel dest_rel src_dir
+  local -a mapped_sources
+  mapped_sources=()
+
+  # Dry-run pass: classify every src file as ADD / WRITE / unchanged.
+  for mapping in "${TRICYCLE_MANAGED_PATHS[@]}"; do
+    src_rel="${mapping%%:*}"
+    dest_rel="${mapping#*:}"
+    src_dir="$CWD/$src_rel"
+    mapped_sources+=("$src_rel")
+    [ -d "$src_dir" ] || continue
+
+    while IFS= read -r src_path; do
+      local entry="${src_path#"$src_dir"/}"
+      local dest_rel_path="$dest_rel/$entry"
+      local dest_path="$CWD/$dest_rel_path"
+      if [ ! -f "$dest_path" ]; then
+        to_add_lines="${to_add_lines}  ADD    $dest_rel_path"$'\n'
+        to_add_count=$((to_add_count + 1))
+      else
+        local src_cs dst_cs
+        src_cs=$(sha256_file "$src_path")
+        dst_cs=$(sha256_file "$dest_path")
+        if [ "$src_cs" != "$dst_cs" ]; then
+          to_write_lines="${to_write_lines}  WRITE  $dest_rel_path"$'\n'
+          to_write_count=$((to_write_count + 1))
+        fi
+      fi
+    done < <(find "$src_dir" -type f | sort)
+  done
+
+  # Unmapped-core guard (FR-008): collect top-level dirs directly under
+  # core/ that no mapping claims. `core/skills/` is intentionally excluded
+  # (FR-007) — skills have their own upstream-fetch flow.
+  local unmapped_lines=""
+  if [ -d "$CWD/core" ]; then
+    while IFS= read -r entry; do
+      # Only flag top-level directories and top-level files under core/.
+      [ "$entry" = "core/skills" ] && continue
+      local found=0
+      for src in "${mapped_sources[@]}"; do
+        case "$entry" in
+          "$src"|"$src"/*) found=1; break ;;
+        esac
+        # Also treat the entry as covered if it's a parent of a mapping's src
+        # (e.g. `core/scripts` is covered by `core/scripts/bash`).
+        case "$src" in
+          "$entry"/*) found=1; break ;;
+        esac
+      done
+      if [ "$found" -eq 0 ]; then
+        unmapped_lines="${unmapped_lines}  $entry"$'\n'
+      fi
+    done < <(cd "$CWD" && find core -mindepth 1 -maxdepth 1 \( -type f -o -type d \) | sort)
+  fi
+
+  # Print dry-run report.
+  echo ""
+  if [ "$to_add_count" -eq 0 ] && [ "$to_write_count" -eq 0 ]; then
+    echo "Nothing to do — .trc/ and .claude/ already mirror core/."
+  else
+    [ -n "$to_add_lines" ] && printf '%s' "$to_add_lines"
+    [ -n "$to_write_lines" ] && printf '%s' "$to_write_lines"
+  fi
+  if [ -n "$unmapped_lines" ]; then
+    echo ""
+    echo "Warning: unmapped paths under core/ (not mirrored):"
+    printf '%s' "$unmapped_lines"
+    echo "Consider extending TRICYCLE_MANAGED_PATHS in bin/tricycle, or moving these files."
+  fi
+
+  # Confirmation gate.
+  if [ "$do_write" -eq 0 ]; then
+    if [ "$to_add_count" -gt 0 ] || [ "$to_write_count" -gt 0 ]; then
+      echo ""
+      echo "Would: $to_add_count added, $to_write_count adopted."
+      echo "Dry run. Re-run with --yes to apply."
+    fi
+    return 0
+  fi
+
+  # Write pass.
+  local written=0 created=0
+  for mapping in "${TRICYCLE_MANAGED_PATHS[@]}"; do
+    src_rel="${mapping%%:*}"
+    dest_rel="${mapping#*:}"
+    src_dir="$CWD/$src_rel"
+    [ -d "$src_dir" ] || continue
+
+    while IFS= read -r src_path; do
+      local entry="${src_path#"$src_dir"/}"
+      local dest_rel_path="$dest_rel/$entry"
+      local dest_path="$CWD/$dest_rel_path"
+      local src_cs dst_cs
+      src_cs=$(sha256_file "$src_path")
+      if [ ! -f "$dest_path" ]; then
+        mkdir -p "$(dirname "$dest_path")"
+        cp -f "$src_path" "$dest_path"
+        case "$src_path" in *.sh) chmod +x "$dest_path" ;; esac
+        lock_set "$dest_rel_path" "$src_cs" "false"
+        created=$((created + 1))
+      else
+        dst_cs=$(sha256_file "$dest_path")
+        if [ "$src_cs" != "$dst_cs" ]; then
+          cp -f "$src_path" "$dest_path"
+          case "$src_path" in *.sh) chmod +x "$dest_path" ;; esac
+          lock_set "$dest_rel_path" "$src_cs" "false"
+          written=$((written + 1))
+        fi
+      fi
+    done < <(find "$src_dir" -type f | sort)
+  done
+
+  save_lock
+  echo ""
+  echo "$created added, $written adopted."
+}
+
 # ─── Hello World ─────────────────────────────────────────────────────────────
 
 cmd_hello_world() {
@@ -1101,6 +1244,7 @@ case "$COMMAND" in
   status)      cmd_status ;;
   update)      cmd_update ;;
   update-self) cmd_update_self ;;
+  dogfood)     cmd_dogfood ;;
   validate)    cmd_validate ;;
   hello-world) cmd_hello_world ;;
   *)

@@ -1019,6 +1019,17 @@ echo "Pull fresh base branch (TRI-32):"
 run_test "refresh_base_branch covers stale/fresh/dirty/offline/diverged/skip/nogit/chain-proxy (tests/test-refresh-base-branch.sh)" \
   bash "$REPO_ROOT/tests/test-refresh-base-branch.sh"
 
+# ── Dogfood drift sync (TRI-33) ──
+
+echo ""
+echo "Dogfood drift sync (TRI-33):"
+
+run_test "tricycle dogfood fixture behavior (tests/test-dogfood-cmd.sh)" \
+  bash "$REPO_ROOT/tests/test-dogfood-cmd.sh"
+
+run_test "core/ and mirrored .trc/.claude/ paths are in sync (tests/test-dogfood-drift.sh)" \
+  bash "$REPO_ROOT/tests/test-dogfood-drift.sh"
+
 # ── trc.review (TRI-28) ──
 
 echo ""
