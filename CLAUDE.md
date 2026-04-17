@@ -27,10 +27,10 @@ If an MCP requires a service to be running (e.g., Docker, a dev server, the data
 start that service BEFORE attempting to use the MCP.
 
 ## Recent Changes
+- TRI-34-drift-one-way: Added Bash 3.2+ (macOS default). + POSIX `find`, `cmp`, `diff` — all already used elsewhere in the suite.
 - TRI-33-dogfood-core-sync: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git (read-only usage for `diff -r` semantics via shell), `find` (existing), `cp -f`, `diff -r`.
 - TRI-32-pull-fresh-base: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git ≥ 2.20 (stable network-error signatures, universal in practice).
-- TRI-31-session-rename-on-kickoff: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + Claude Code `UserPromptSubmit` hook contract with `hookSpecificOutput.sessionTitle` (available v2.1.94+ per R1). Existing in-repo: `core/scripts/bash/common.sh`, `bin/tricycle` settings generator, `bin/lib/helpers.sh`.
 
 ## Active Technologies
-- Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git (read-only usage for `diff -r` semantics via shell), `find` (existing), `cp -f`, `diff -r`. (TRI-33-dogfood-core-sync)
-- `.tricycle.lock` (existing). No new files. (TRI-33-dogfood-core-sync)
+- Bash 3.2+ (macOS default). + POSIX `find`, `cmp`, `diff` — all already used elsewhere in the suite. (TRI-34-drift-one-way)
+- None. (TRI-34-drift-one-way)
