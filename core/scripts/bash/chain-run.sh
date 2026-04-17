@@ -173,7 +173,34 @@ if open_q_json:
     try:
         extra = json.loads(open_q_json)
         if isinstance(extra, list):
+            # FR-006: reject hedging language on status=committed. A worker
+            # that returns `status: committed` must NOT pause or ask the
+            # user for push approval via open_questions — that's the hang
+            # failure mode the fire-and-report contract was built to kill.
+            if status == "committed":
+                HEDGE_PATTERNS = (
+                    "push approval", "may i push", "should i push",
+                    "may i commit", "should i commit", "may i merge",
+                    "should i merge", "await approval", "awaiting approval",
+                    "wait for approval", "pause", "please approve",
+                    "push?", "merge?", "proceed?",
+                )
+                offenders = []
+                for q in extra:
+                    if not isinstance(q, str):
+                        continue
+                    lo = q.lower()
+                    if any(p in lo for p in HEDGE_PATTERNS):
+                        offenders.append(q)
+                if offenders:
+                    print(json.dumps({
+                        "error": "status=committed contradicts hedging in open_questions: " + "; ".join(offenders[:3]),
+                        "code": "ERR_COMMITTED_HEDGING",
+                    }), file=sys.stderr)
+                    sys.exit(2)
             t.setdefault("open_questions", []).extend(extra)
+    except SystemExit:
+        raise
     except Exception:
         pass
 if started_now == "1":
@@ -234,6 +261,9 @@ if os.path.isdir(root):
             continue
         if s.get("status") != "in_progress":
             continue
+        # Dismissed runs stay on disk but are hidden from resume prompts.
+        if s.get("dismissed_at"):
+            continue
         ids = s.get("ticket_ids", [])
         idx = s.get("current_index", 0)
         next_tid = ids[idx] if 0 <= idx < len(ids) else None
@@ -247,6 +277,18 @@ if os.path.isdir(root):
         })
 runs.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
 print(json.dumps({"runs": runs}, indent=2))
+PY
+}
+
+py_dismiss_state() {
+    python3 - "$1" <<'PY'
+import json, sys, datetime
+state = json.loads(sys.argv[1])
+now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+# Idempotent: calling dismiss twice is fine.
+state["dismissed_at"] = now
+state["updated_at"] = now
+print(json.dumps(state, indent=2))
 PY
 }
 
@@ -514,6 +556,31 @@ sub_list_interrupted() {
     py_list_interrupted
 }
 
+# ─── Subcommand: dismiss ─────────────────────────────────────────────────
+
+sub_dismiss() {
+    local run_id=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --run-id) run_id="$2"; shift 2 ;;
+            *) err_json "ERR_BAD_INPUT" "unknown flag: $1"; return 2 ;;
+        esac
+    done
+    if [[ -z "$run_id" ]]; then
+        err_json "ERR_BAD_INPUT" "--run-id is required"
+        return 2
+    fi
+    local run_dir
+    run_dir=$(chain_run_dir_for_id "$run_id")
+    local state_json rc
+    state_json=$(chain_run_read_state "$run_dir"); rc=$?
+    if [[ $rc -ne 0 ]]; then return $rc; fi
+    local dismissed
+    dismissed=$(py_dismiss_state "$state_json")
+    chain_run_write_state_atomic "$run_dir" "$dismissed"
+    printf '%s\n' "$dismissed"
+}
+
 # ─── Subcommand: progress ────────────────────────────────────────────────
 
 sub_progress() {
@@ -552,7 +619,10 @@ Subcommands:
   get --run-id <id>        Read state.json for a run
   update-ticket --run-id <id> --ticket <tid> --status <s> [options]
                            Transition one ticket
-  list-interrupted         List non-terminal runs
+  list-interrupted         List non-terminal runs (hides dismissed runs)
+  dismiss --run-id <id>    Hide an interrupted run from list-interrupted
+                           without closing it (e.g. runs owned by another
+                           session on this machine)
   close --run-id <id> --terminal-status <s> [--reason <string>]
                            Mark a run terminal
   progress --run-id <id> --ticket <tid>
@@ -570,6 +640,7 @@ main() {
         get)                sub_get "$@" ;;
         update-ticket)     sub_update_ticket "$@" ;;
         list-interrupted)  sub_list_interrupted "$@" ;;
+        dismiss)           sub_dismiss "$@" ;;
         close)             sub_close "$@" ;;
         progress)          sub_progress "$@" ;;
         -h|--help|help)    usage ;;

@@ -958,7 +958,8 @@ run_test "node --test tests/test-chain-run-*.js all pass" bash -c '
     tests/test-chain-run-update-ticket.js \
     tests/test-chain-run-close.js \
     tests/test-chain-run-interrupted.js \
-    tests/test-chain-run-progress.js
+    tests/test-chain-run-progress.js \
+    tests/test-chain-run-dismiss.js
 '
 
 run_test "e2e happy path (tests/test-chain-run-e2e-happy.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-happy.sh"
@@ -983,6 +984,12 @@ echo ""
 echo "chain-run.sh (TRI-30):"
 
 run_test "FR-013 no pause-relay refs in trc.chain.md" bash "$REPO_ROOT/tests/test-chain-run-no-pause-relay.sh"
+
+run_test "trc.chain.md contract rules present (tests/test-chain-md-contract.sh)" \
+  bash "$REPO_ROOT/tests/test-chain-md-contract.sh"
+
+run_test "tricycle update adopts unmanaged files (tests/test-tricycle-update-adopt.sh)" \
+  bash "$REPO_ROOT/tests/test-tricycle-update-adopt.sh"
 
 # ── trc.review (TRI-28) ──
 

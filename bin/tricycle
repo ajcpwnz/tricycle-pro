@@ -722,7 +722,7 @@ cmd_update() {
     echo ""
   fi
 
-  local updated=0 skipped=0 added=0
+  local updated=0 skipped=0 added=0 adopted=0
 
   local src_rel dest_rel
   for mapping in \
@@ -746,6 +746,7 @@ cmd_update() {
       new_checksum=$(sha256_str "$new_content")
 
       if [ ! -f "$dest_path" ]; then
+        # File missing locally — new managed file from core.
         if [ $DRY_RUN -eq 1 ]; then
           info "ADD $dest_rel_path"
         else
@@ -766,6 +767,29 @@ cmd_update() {
             install_file "$src_path" "$dest_rel_path"
           fi
           updated=$((updated + 1))
+        fi
+      else
+        # File exists in consumer but not tracked in lock (e.g. manually
+        # copied, or added to core/ after a prior init). Adopt it.
+        local current_checksum
+        current_checksum=$(sha256_str "$(cat "$dest_path")")
+        if [ "$current_checksum" = "$new_checksum" ]; then
+          # Byte-identical to source — adopt silently into the lock.
+          if [ $DRY_RUN -eq 1 ]; then
+            info "ADOPT $dest_rel_path (matches core, adding to lock)"
+          else
+            lock_set "$dest_rel_path" "$new_checksum" "false"
+          fi
+          adopted=$((adopted + 1))
+        else
+          # Differs from source — treat as user-modified. Record it in the
+          # lock as customized so a subsequent update explains itself, but
+          # do NOT overwrite the user's file.
+          info "SKIP $dest_rel_path (unmanaged, locally modified — use \`tricycle generate\` or delete the file to accept upstream)"
+          if [ $DRY_RUN -eq 0 ]; then
+            lock_set "$dest_rel_path" "$current_checksum" "true"
+          fi
+          skipped=$((skipped + 1))
         fi
       fi
     done < <(find "$src_dir" -type f | sort)
@@ -816,7 +840,7 @@ cmd_update() {
   local prefix=""
   [ $DRY_RUN -eq 1 ] && prefix="Would: "
   echo ""
-  echo "${prefix}${updated} updated, ${added} added, ${skipped} skipped (locally modified)"
+  echo "${prefix}${updated} updated, ${added} added, ${adopted} adopted, ${skipped} skipped (locally modified)"
   echo ""
 }
 

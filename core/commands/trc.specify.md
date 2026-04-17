@@ -23,9 +23,36 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 Before creating the feature branch, determine whether you need to work in a git worktree.
 
-### Detection
+### Pre-provisioned worktree (orchestrator handoff)
 
-Check the current working directory:
+If the environment variable `TRC_PREPROVISIONED_WORKTREE` is set to a path, or
+your current working directory already is an initialized feature worktree
+(i.e. `.git` is a file AND `HEAD` points to a non-default branch that already
+exists), the worktree has been provisioned by an orchestrator (typically
+`/trc.chain`). In that case:
+
+- Set `WORKTREE_MODE=preprovisioned`.
+- Set `BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)` — do **not** derive it
+  from the feature description, and do **not** append a suffix.
+- Set `SPEC_FILE=specs/$BRANCH_NAME/spec.md` — the spec directory name MUST
+  equal the branch name exactly (the pre-push marker hook on the consumer side
+  expects `specs/<BRANCH_NAME>/.local-testing-passed`, so any suffix like
+  `-procedures` will break the push).
+- SKIP Step 2 (`create-new-feature.sh`) entirely. The branch already exists;
+  re-running the script will fail with "branch already exists" or create a
+  stale duplicate.
+- SKIP Step 2b (worktree creation). You are already in the worktree.
+- Proceed directly to Step 3 (Load template) using the existing
+  `$SPEC_FILE`, creating the spec directory + copying the template if the
+  file doesn't exist yet:
+  ```bash
+  mkdir -p "specs/$BRANCH_NAME"
+  [ -f "$SPEC_FILE" ] || cp .trc/templates/spec-template.md "$SPEC_FILE"
+  ```
+
+### Detection (normal flow)
+
+If the pre-provisioned case above does not apply, check the current working directory:
 - If `.git` is a **file** (not a directory), you are already in a worktree. Set `WORKTREE_MODE=already` and proceed to the next block.
 - If `.git` is a **directory**, you are in the main checkout. Set `WORKTREE_MODE=needed` — the feature-setup block will handle worktree creation after branch creation.
 
