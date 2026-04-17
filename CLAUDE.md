@@ -27,9 +27,10 @@ If an MCP requires a service to be running (e.g., Docker, a dev server, the data
 start that service BEFORE attempting to use the MCP.
 
 ## Recent Changes
+- TRI-33-dogfood-core-sync: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git (read-only usage for `diff -r` semantics via shell), `find` (existing), `cp -f`, `diff -r`.
 - TRI-32-pull-fresh-base: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git ≥ 2.20 (stable network-error signatures, universal in practice).
 - TRI-31-session-rename-on-kickoff: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + Claude Code `UserPromptSubmit` hook contract with `hookSpecificOutput.sessionTitle` (available v2.1.94+ per R1). Existing in-repo: `core/scripts/bash/common.sh`, `bin/tricycle` settings generator, `bin/lib/helpers.sh`.
-- TRI-30-chain-run-to-commit: Added Bash 3.2+ (macOS default); Node.js (tests only, via `node --test`); python3 (json reads/builds, already used in TRI-27) + Existing `core/scripts/bash/common.sh`, `chain-run.sh` (TRI-27); GitHub CLI `gh` (orchestrator-side, agent-invoked); git ≥ 2.5 for worktree support; Claude Code's `Agent` tool for spawning workers (no longer uses `SendMessage` — that's the bug being fixed)
 
 ## Active Technologies
-- Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git ≥ 2.20 (stable network-error signatures, universal in practice). (TRI-32-pull-fresh-base)
+- Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git (read-only usage for `diff -r` semantics via shell), `find` (existing), `cp -f`, `diff -r`. (TRI-33-dogfood-core-sync)
+- `.tricycle.lock` (existing). No new files. (TRI-33-dogfood-core-sync)
