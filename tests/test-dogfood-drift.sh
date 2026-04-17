@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
-# TRI-33 US3: fail CI if core/ and its mirrored consumer paths drift in
-# the tricycle-pro meta-repo. Silent skip in ordinary consumer fixtures.
+# TRI-33/TRI-34 US3: fail CI if core/ files drift from their mirrored
+# consumer paths in the tricycle-pro meta-repo. Silent skip in ordinary
+# consumer fixtures.
+#
+# One-way check (TRI-34): walks core/<src> for each mapping pair and
+# asserts a byte-identical file exists at <dst>/<rel>. Extras in <dst>
+# (runtime-generated files like .claude/hooks/.session-context.conf,
+# orphans, etc.) are NOT drift — they match what `tricycle dogfood --yes`
+# would-or-would-not touch. See
+# specs/TRI-34-drift-one-way/contracts/drift-check.md.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,8 +20,7 @@ if [ ! -d "$REPO_ROOT/core" ]; then
 fi
 
 # Kept in lockstep with TRICYCLE_MANAGED_PATHS in bin/tricycle. If that
-# array grows, update this list too. (A test-time source-and-eval of the
-# array is possible but couples the test to bin/tricycle's load order.)
+# array grows, update this list too (see TRI-34 research R3).
 MAPPINGS=(
   "core/commands:.claude/commands"
   "core/templates:.trc/templates"
@@ -31,16 +38,24 @@ for mapping in "${MAPPINGS[@]}"; do
     src="$REPO_ROOT/$src_rel"
     dst="$REPO_ROOT/$dst_rel"
     [ -d "$src" ] || continue
-    # Missing destination directory is itself a drift.
     if [ ! -d "$dst" ]; then
-        drifted+=("$dst_rel (missing)")
+        drifted+=("$dst_rel (missing directory)")
         continue
     fi
-    diff_out=$(diff -r "$src" "$dst" 2>&1 || true)
-    if [ -n "$diff_out" ]; then
-        drifted+=("$dst_rel")
-        details="${details}--- diff $src_rel vs $dst_rel ---"$'\n'"$diff_out"$'\n'
-    fi
+
+    while IFS= read -r src_path; do
+        rel="${src_path#$src/}"
+        dst_path="$dst/$rel"
+        if [ ! -f "$dst_path" ]; then
+            drifted+=("$dst_rel/$rel (missing)")
+            continue
+        fi
+        if ! cmp -s "$src_path" "$dst_path"; then
+            drifted+=("$dst_rel/$rel")
+            diff_out=$(diff "$src_path" "$dst_path" 2>&1 || true)
+            details="${details}--- diff $src_rel/$rel vs $dst_rel/$rel ---"$'\n'"$diff_out"$'\n'
+        fi
+    done < <(find "$src" -type f | sort)
 done
 
 if [ ${#drifted[@]} -gt 0 ]; then
@@ -49,9 +64,11 @@ if [ ${#drifted[@]} -gt 0 ]; then
     for d in "${drifted[@]}"; do
         echo "  $d"
     done
-    echo ""
-    echo "Detail:"
-    printf '%s' "$details"
+    if [ -n "$details" ]; then
+        echo ""
+        echo "Detail:"
+        printf '%s' "$details"
+    fi
     echo ""
     echo "Fix: run \`tricycle dogfood --yes\` from the repo root to re-mirror core/,"
     echo "or intentional divergence must be lifted into core/."
