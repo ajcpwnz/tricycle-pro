@@ -59,7 +59,12 @@ Found N interrupted chain run(s):
   - <run_id>: <count> tickets, <completed> completed, next: <next_ticket_id>,
     last updated <updated_at>
 
-Options for each: [R]esume, [D]iscard, [I]gnore and start new.
+Options for each:
+  [R]esume — pick up where the run left off
+  [D]iscard — close the run (terminal-status aborted)
+  [I]gnore — leave it untouched, start new (will re-surface on next resume check)
+  [X] Dismiss — hide this run from future resume prompts without closing it
+                (useful for runs owned by another shell session on this machine)
 ```
 
 Wait for the user's choice for each run before proceeding.
@@ -90,6 +95,12 @@ Wait for the user's choice for each run before proceeding.
   --reason "user discarded"`, then continue to Parse Range with the user's
   new input.
 - **Ignore**: leave the interrupted run untouched, continue to Parse Range.
+  It will re-appear on the next `/trc.chain` invocation.
+- **Dismiss**: call `chain-run.sh dismiss --run-id <id>` to hide the run from
+  future resume prompts without closing it. State is preserved — the run can
+  still be inspected on disk at `specs/.chain-runs/<run-id>/`. Use this for
+  runs owned by another session on this machine that you don't intend to
+  resume yourself.
 
 ## Parse Range
 
@@ -202,7 +213,26 @@ BODY:
 
 SHARED EPIC BRIEF:
 <if brief_path is null: "No shared epic brief for this run; each ticket is independent.">
-<if brief_path is non-null: "Read the shared epic brief at: <brief_path>">
+<if brief_path is non-null: "Read the shared epic brief at: <brief_path>. Treat it as READ-ONLY — do not edit it and do not tick checkboxes in it or in any other shared planning document. The orchestrator ticks shared docs once after the whole chain completes.">
+
+PRE-PROVISIONED WORKTREE:
+<if worktree_path is null: "No worktree pre-provisioned; /trc.specify will provision one for you in the normal flow.">
+<if worktree_path is non-null:
+"A worktree has been provisioned for you at: <worktree_path>
+ On a new branch: <branch>
+
+ BEFORE running /trc.headless, you MUST:
+   1. cd '<worktree_path>' so that every subsequent command runs inside it.
+   2. Export TRC_PREPROVISIONED_WORKTREE='<worktree_path>' so /trc.specify
+      picks up the handoff and skips worktree-setup.
+
+ DO NOT re-run any worktree-setup block. DO NOT call
+ `create-new-feature.sh --provision-worktree`. DO NOT rename the branch.
+ DO NOT change the spec directory name. The spec directory MUST be
+ exactly `specs/<branch>/` — no suffixes like `-procedures`, `-impl`,
+ etc. — because the pre-push marker hook looks for
+ `specs/<branch>/.local-testing-passed` (see rule 5 below).
+">
 
 RUN DIRECTORY: specs/.chain-runs/<run-id>/
 
@@ -220,6 +250,15 @@ HARD CONTRACT:
    /trc.headless wants to clarify, auto-resolve with reasonable defaults
    per its headless semantics; if you genuinely cannot proceed, return a
    `status: "failed"` report and exit.
+
+   NEVER hedge in the final report either: if you return
+   `status: "committed"`, your `open_questions` array MUST NOT contain
+   anything resembling "push approval", "may I push", "should I merge",
+   "awaiting approval", or any other phrase asking the user for a
+   decision — the chain helper rejects such reports with
+   ERR_COMMITTED_HEDGING and the whole ticket fails. Use `open_questions`
+   only for forward-looking caveats (e.g. "consider backfilling legacy
+   rows in a follow-up").
 
 2. NEVER PUSH. You do not run `git push`, `gh pr create`, or `gh pr
    merge`. The orchestrator handles all remote-mutating commands AFTER
@@ -243,24 +282,36 @@ HARD CONTRACT:
    stack test for user-facing changes, QA cases added for user-facing
    features. If any gate fails, do NOT commit; return `status: "failed"`.
 
-5. EXPLICIT COMMIT. After the gates pass and the version is bumped, run:
+5. LOCAL-TESTING MARKER (project-local pre-push gate). If this project
+   has a pre-push marker convention, the marker path is bound to the
+   canonical spec directory:
+     specs/<branch>/.local-testing-passed
+   where `<branch>` is the branch name exactly as produced by
+   `create-new-feature.sh` (or as inherited from the pre-provisioned
+   worktree — see the block above). Do NOT put the marker at the
+   worktree root, under `apps/*/`, or under any renamed spec dir. If
+   the marker is required, create it in the correct location before
+   the orchestrator runs `git push`.
+
+6. EXPLICIT COMMIT. After the gates pass and the version is bumped, run:
      git add -A
      git commit -m "<ticket-id>: <one-line summary of the change>"
      COMMIT_SHA=$(git rev-parse HEAD)
    Then emit the final `committed` progress event (step 3).
 
-6. FINAL REPORT. Return exactly one structured JSON object as your final
+7. FINAL REPORT. Return exactly one structured JSON object as your final
    message, wrapped in ```json ... ``` fences, with these fields:
      {
        "ticket_id":   "<ticket-id>",
        "status":      "committed" | "failed",
        "branch":      "<branch-name or null>",
        "commit_sha":  "<sha or null>",
+       "spec_dir":    "specs/<branch>",
        "files_changed": ["path/a", "path/b", ...],
        "lint_status": "pass" | "fail" | "skipped",
        "test_status": "pass" | "fail" | "skipped",
        "worker_error": null | "<short error>",
-       "open_questions": ["<optional caveat>", ...],
+       "open_questions": ["<forward-looking caveat>", ...],
        "summary":     "<one-paragraph human summary>"
      }
    After this JSON block, write nothing else. Then exit.
@@ -370,7 +421,20 @@ No sub-agent message-forwarding is involved. The worker is already dead.
 
 4. **On `yes`** (or any approval):
 
-   a. **`git push`** the worker's branch to origin:
+   a. **Pre-push marker (if applicable).** If this project has a local
+      pre-push marker convention (e.g. `specs/<branch>/.local-testing-passed`
+      in some consumer repos), ensure the marker file exists at the
+      canonical path before invoking `git push` or `gh pr *`. Create it
+      in a **separate** Bash tool call:
+      ```bash
+      touch "<worktree_path>/specs/<branch>/.local-testing-passed"
+      ```
+      DO NOT chain `touch … && gh pr create …` in a single Bash call.
+      Project-local pre-push guards that scan the full command string can
+      see the `gh pr create` substring and block before the marker is
+      written, so each step must be its own tool call.
+
+   b. **`git push`** the worker's branch to origin (separate Bash call):
       ```bash
       git -C "<worktree_path>" push -u origin "<branch>"
       ```
@@ -378,8 +442,9 @@ No sub-agent message-forwarding is involved. The worker is already dead.
       `failed`, `close --terminal-status failed --reason "git push: <err>"`,
       jump to `## Summary`.
 
-   b. **`gh pr create`** targeting `push.pr_target` from
-      `tricycle.config.yml`:
+   c. **`gh pr create`** targeting `push.pr_target` from
+      `tricycle.config.yml` (separate Bash call — do NOT chain with
+      step b):
       ```bash
       gh pr create --base "<pr_target>" --head "<branch>" \
         --title "<ticket-id>: <one-line>" \
@@ -394,24 +459,42 @@ No sub-agent message-forwarding is involved. The worker is already dead.
       On failure of `gh pr create`, surface, mark `failed`, close, jump
       to Summary.
 
-   c. **`gh pr merge`** if `push.auto_merge` is true. Use
+   d. **`gh pr merge`** if `push.auto_merge` is true. Use
       `push.merge_strategy` (`squash`, `merge`, or `rebase`). On `squash`:
       ```bash
       gh pr merge "<pr_number>" --squash --delete-branch
       ```
-      On success, mark the ticket `merged`:
+      On success, mark the ticket `merged`.
+
+      **Server-side merge succeeded, local sync failed** is a common case
+      — e.g. `gh pr merge` fails locally with `fatal: '<base>' is already
+      used by worktree at '…'` because the base branch is checked out in
+      another worktree on this machine. In that case the PR is already
+      merged on GitHub; the only thing that failed was `gh`'s local ref
+      sync. Before treating `gh pr merge`'s non-zero exit as a failure:
+      ```bash
+      gh pr view "<pr_url>" --json state,mergedAt
+      ```
+      If `state` is `MERGED` (and `mergedAt` is non-null), treat the merge
+      as successful, log a one-line warning about the local sync error,
+      and continue. Only fall through to the failure path below if the PR
+      is genuinely not merged on the server.
+
+      On a genuine merge failure (conflicts, branch protection, blocked
+      review, not merged on server), surface, mark `failed`, close, jump
+      to Summary.
+
+      Mark the ticket `merged` whenever the server-side state is MERGED:
       ```bash
       bash core/scripts/bash/chain-run.sh update-ticket \
         --run-id "<run_id>" --ticket "<ticket-id>" --status merged
       ```
-      On failure (conflicts, branch protection, blocked review), surface,
-      mark `failed`, close, jump to Summary.
 
       If `push.auto_merge` is false, **stop here** with the PR URL and
       instructions for the user; the ticket stays `pushed`. The chain
       continues to the next ticket only if the user confirms.
 
-   d. **Worktree cleanup** after merge:
+   e. **Worktree cleanup** after merge:
       ```bash
       git -C "<main-checkout>" worktree remove "<worktree_path>"
       git -C "<main-checkout>" worktree prune
@@ -419,7 +502,7 @@ No sub-agent message-forwarding is involved. The worker is already dead.
       ```
       On failure, log a warning but continue — cleanup is best-effort.
 
-   e. **Mark `completed`**:
+   f. **Mark `completed`**:
       ```bash
       bash core/scripts/bash/chain-run.sh update-ticket \
         --run-id "<run_id>" --ticket "<ticket-id>" \
@@ -460,6 +543,31 @@ a dead inbox and silently ignored. This is mechanically enforced by
 forbidden tool name ever reappears in this file. See
 `feedback_trc_chain_no_pause_relay` in user memory for the original
 incident that motivated this requirement.
+
+## Shared-Doc Post-Chain Tick (orchestrator-only)
+
+Workers are explicitly forbidden from editing shared planning documents
+(including `epic-brief.md` and any external plan/status doc) — concurrent
+worker edits across parallel PRs drop each other's ticks under a squash
+merge. Instead, the orchestrator ticks shared docs **once** after the chain
+completes.
+
+If the user supplied a shared plan/status document at run start (either via
+the epic-brief path or by pointing you at an external doc like
+`docs/<epic>-implementation-plan.md`), do the following BEFORE the
+summary step:
+
+1. Read the current state once: `chain-run.sh get --run-id "<run_id>"`.
+2. For each ticket with `status == "merged"` or `status == "completed"`,
+   find the matching unchecked entry in the shared doc (match by ticket
+   id) and tick it. Preserve the doc's existing formatting; do not
+   restructure it.
+3. If the doc lives on `main` (or the configured `push.pr_target`),
+   commit the ticks directly to that branch in the main checkout — NOT
+   in any worker's worktree — and push in a single small commit titled
+   `<epic>: tick <count> completed tickets`. Ask the user for approval
+   before committing to main.
+4. If the user did not supply a shared doc, skip this section entirely.
 
 ## Summary
 
