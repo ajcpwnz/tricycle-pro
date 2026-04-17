@@ -991,6 +991,9 @@ run_test "trc.chain.md contract rules present (tests/test-chain-md-contract.sh)"
 run_test "tricycle update adopts unmanaged files (tests/test-tricycle-update-adopt.sh)" \
   bash "$REPO_ROOT/tests/test-tricycle-update-adopt.sh"
 
+run_test "tricycle update-self exec-finalize avoids self-replace race (tests/test-update-self-exec.sh)" \
+  bash "$REPO_ROOT/tests/test-update-self-exec.sh"
+
 # ── Session rename on kickoff (TRI-31) ──
 
 echo ""
