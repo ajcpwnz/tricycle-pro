@@ -44,6 +44,11 @@ for mapping in "${MAPPINGS[@]}"; do
     fi
 
     while IFS= read -r src_path; do
+        # Skip OS-noise files — matches cmd_dogfood's mirror pass,
+        # which never copies .DS_Store/Thumbs.db into the mirror.
+        case "$(basename "$src_path")" in
+            .DS_Store|Thumbs.db) continue ;;
+        esac
         rel="${src_path#$src/}"
         dst_path="$dst/$rel"
         if [ ! -f "$dst_path" ]; then
