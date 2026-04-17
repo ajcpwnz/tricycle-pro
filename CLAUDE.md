@@ -27,10 +27,9 @@ If an MCP requires a service to be running (e.g., Docker, a dev server, the data
 start that service BEFORE attempting to use the MCP.
 
 ## Recent Changes
+- TRI-32-pull-fresh-base: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git ≥ 2.20 (stable network-error signatures, universal in practice).
 - TRI-31-session-rename-on-kickoff: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + Claude Code `UserPromptSubmit` hook contract with `hookSpecificOutput.sessionTitle` (available v2.1.94+ per R1). Existing in-repo: `core/scripts/bash/common.sh`, `bin/tricycle` settings generator, `bin/lib/helpers.sh`.
 - TRI-30-chain-run-to-commit: Added Bash 3.2+ (macOS default); Node.js (tests only, via `node --test`); python3 (json reads/builds, already used in TRI-27) + Existing `core/scripts/bash/common.sh`, `chain-run.sh` (TRI-27); GitHub CLI `gh` (orchestrator-side, agent-invoked); git ≥ 2.5 for worktree support; Claude Code's `Agent` tool for spawning workers (no longer uses `SendMessage` — that's the bug being fixed)
-- TRI-28-trc-review-command: Added Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). No new runtime languages. + Existing in-repo helpers only — `bin/lib/helpers.sh`, `bin/lib/yaml_parser.sh`, `bin/lib/common.sh`, `core/scripts/bash/json_builder.sh`. External CLI: `gh` (GitHub CLI, user-provided, authenticated). Agent-side tool: Claude Code's `WebFetch` (for remote sources).
 
 ## Active Technologies
-- Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + Claude Code `UserPromptSubmit` hook contract with `hookSpecificOutput.sessionTitle` (available v2.1.94+ per R1). Existing in-repo: `core/scripts/bash/common.sh`, `bin/tricycle` settings generator, `bin/lib/helpers.sh`. (TRI-31-session-rename-on-kickoff)
-- None — feature is stateless. (TRI-31-session-rename-on-kickoff)
+- Bash 3.2+ (macOS default); Node.js ≥ 18 (tests only, via `node --test`). + git ≥ 2.20 (stable network-error signatures, universal in practice). (TRI-32-pull-fresh-base)
