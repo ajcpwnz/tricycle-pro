@@ -355,6 +355,7 @@ tricycle skills list                # List installed skills and their status
 tricycle update [--dry-run]         # Update core files
 tricycle update-self                # Update CLI itself
 tricycle validate                   # Validate configuration
+tricycle graphify <sub>             # Manage optional graphify integration
 ```
 
 ## Configuration
@@ -475,6 +476,78 @@ tricycle add <module>
 | `ci-watch` | CI pipeline monitoring |
 | `mcp` | Model Context Protocol server presets |
 | `memory` | Agent memory persistence via seeds |
+
+## Graphify Integration (optional)
+
+[Graphify](https://github.com/safishamsi/graphify) is a separately-distributed
+skill + PyPI package (`graphifyy`) that builds a persistent, queryable knowledge
+graph of your repo. When enabled, tricycle:
+
+1. **Refreshes the graph automatically** at every `/trc.specify`, `/trc.chain`,
+   or `/trc.headless` kickoff (fire-and-forget, cached — no-op is cheap when
+   nothing changed).
+2. **Registers a per-chain MCP entry** in `.mcp.json` at `/trc.chain` start,
+   so worker sub-agents' Claude Code hosts spawn the graphify MCP stdio
+   server on demand and workers can query architectural context via tools
+   instead of re-reading the tree.
+3. **Pipes graph context into every worker's brief** — GRAPH_REPORT.md excerpt,
+   MCP PID, guidance on when to query vs skip.
+
+All disabled by default. **Zero impact on upgrade** — when the flag is off, the
+hook is a silent no-op and the chain integration is skipped entirely.
+
+### Quickstart
+
+```bash
+tricycle graphify install               # pip install graphifyy
+tricycle graphify bootstrap             # first-time `graphify .` on the repo
+# Then flip the flag in tricycle.config.yml:
+#   integrations:
+#     graphify:
+#       enabled: true
+tricycle generate settings              # re-register the kickoff hook
+```
+
+### Config
+
+```yaml
+integrations:
+  graphify:
+    enabled: false            # master switch — required for any of the below
+    auto_install: false       # let the hook `pip install graphifyy` if missing
+    auto_bootstrap: false     # let the hook run first-time `graphify .`
+    refresh_on_kickoff: true  # async `graphify . --update` at every kickoff
+    mcp_per_chain: true       # spawn `graphify --mcp` per `/trc.chain` run
+```
+
+### Commands
+
+```bash
+tricycle graphify status [--json]       # show install/graph/mcp state
+tricycle graphify install               # pip install graphifyy
+tricycle graphify bootstrap             # first-time graph build
+tricycle graphify refresh               # async --update (hook uses this)
+tricycle graphify mcp-start [--run-id X]   # register graphify in .mcp.json
+tricycle graphify mcp-stop  [--run-id X]   # unregister graphify from .mcp.json
+```
+
+### Troubleshooting
+
+- **Hook silently did nothing** — check `tricycle graphify status`. If
+  `installed: false`, either run `tricycle graphify install` or set
+  `auto_install: true`. If `graph: false`, run `tricycle graphify bootstrap`
+  or set `auto_bootstrap: true`.
+- **Refresh log** — every async refresh writes to `graphify-out/.refresh.log`
+  and stores the PID in `graphify-out/.refresh.pid`.
+- **MCP registration** — `tricycle graphify status` shows whether `.mcp.json`
+  has a `graphify` entry. Your Claude Code host spawns the stdio server
+  on demand when workers first call a graphify tool.
+- **Stale graph after bulk code changes** — run `tricycle graphify refresh`
+  manually; don't trust nodes after you've rewritten large swaths of the tree.
+- **macOS Homebrew Python** — `install` falls back to
+  `--break-system-packages`. If you'd rather keep the system Python clean,
+  install graphify into a venv and put its `graphify` shim on your PATH
+  before invoking tricycle.
 
 ## Project Structure
 

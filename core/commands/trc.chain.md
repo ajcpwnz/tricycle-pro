@@ -262,6 +262,35 @@ Capture `run_id`, `state_path`, `brief_path` from the stdout JSON. Store
 them as orchestrator working memory for the rest of the execution. On any
 helper error, surface it and abort.
 
+## Graphify MCP Registration (optional)
+
+If the project has opted in to the graphify integration
+(`integrations.graphify.enabled: true` AND `integrations.graphify.mcp_per_chain:
+true` in `tricycle.config.yml`) AND a graph exists at
+`graphify-out/graph.json`, register a `graphify` entry in `.mcp.json` so
+worker sub-agents' Claude Code hosts can spawn and manage the MCP stdio
+server on demand:
+
+```bash
+./bin/tricycle graphify mcp-start --run-id <run_id>
+```
+
+- MCP stdio servers are launched by the client (Claude Code), not as a
+  background daemon — spawning one manually and disowning it produces a
+  dead process as soon as stdin disconnects. The wrapper updates
+  `.mcp.json`; the worker's host takes care of the actual spawn.
+- On any non-zero exit (graphify not installed, graph missing), log a
+  one-line warning and continue — **this is never a chain abort
+  condition.** Workers fall back to reading `graphify-out/*` directly if
+  the MCP isn't registered.
+- At chain close (every path through `## Summary`), tear down with:
+  ```bash
+  ./bin/tricycle graphify mcp-stop --run-id <run_id>
+  ```
+  Best-effort — log warnings, never fail the chain on teardown errors.
+
+Skip this step entirely (no warning) when the feature flag is off.
+
 ## Worker Brief Template
 
 Each worker is a fire-and-report sub-agent: it runs the full trc workflow
@@ -304,6 +333,38 @@ PRE-PROVISIONED WORKTREE:
 ">
 
 RUN DIRECTORY: specs/.chain-runs/<run-id>/
+
+GRAPHIFY CONTEXT:
+<if graphify not enabled or graph missing: "No knowledge graph for this repo. Read the files directly as usual.">
+<if graphify enabled AND graph exists:
+"A knowledge graph of this repo is available to short-circuit the usual
+ 'open files to find things' loop. Prefer querying it BEFORE wide file reads:
+
+   - GRAPH REPORT (read once for orientation): graphify-out/GRAPH_REPORT.md
+     — lists god nodes, surprising connections, and suggested questions.
+   - LOCAL QUERY (cheap): `graphify query \"<your question>\"` or
+     `graphify explain \"<symbol-or-concept>\"` or
+     `graphify path \"<A>\" \"<B>\"` for shortest path between two concepts.
+   - RAW JSON: graphify-out/graph.json (when you need every edge).
+   - MCP (if .mcp.json has a `graphify` entry): tools {query_graph,
+     get_node, get_neighbors, get_community, god_nodes, graph_stats,
+     shortest_path}. Your Claude Code host spawns and manages the stdio
+     server automatically — just call the tools by name.
+
+ WHEN to query: architectural questions (where is X defined, who calls Y,
+ what depends on Z), code-location lookups before grepping, 'is there
+ already a util for this?'. Every edge carries a provenance tag —
+ EXTRACTED (found directly), INFERRED (reasonable guess with confidence),
+ AMBIGUOUS (flagged). Treat INFERRED as a hint, not truth.
+
+ WHEN NOT to query: trivial one-file edits, cosmetic fixes, anything where
+ you already know the exact file path. The graph is a shortcut, not a
+ mandatory gate.
+
+ STALENESS: the graph is refreshed automatically by the kickoff hook
+ before you started. If you touch code and then need to re-query the
+ updated state, run `graphify . --update` yourself — do NOT trust stale
+ nodes after you've mutated the tree.">
 
 TASK: Run /trc.headless end-to-end for this ticket. After /trc.headless
 finishes (lint + test green, version bumped), explicitly create a local
@@ -675,6 +736,14 @@ After the loop completes (successfully, partially, or stopped-on-failure):
    bash core/scripts/bash/chain-run.sh close \
      --run-id "<run_id>" --terminal-status completed
    ```
+
+4. **Graphify MCP teardown.** If `## Graphify MCP Spawn` was performed at
+   chain init, tear down the MCP server as a best-effort step — the chain
+   is done with it:
+   ```bash
+   ./bin/tricycle graphify mcp-stop --run-id "<run_id>"
+   ```
+   Log any warning but never treat teardown failure as a chain failure.
 
 4. Print the summary table and a one-line footer with the run-id so the
    user can reference it later.

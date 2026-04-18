@@ -65,6 +65,13 @@ while [ $# -gt 0 ]; do
     --force) FORCE=1; shift ;;
     -h|--help) HELP=1; shift ;;
     -v|--version) SHOW_VERSION=1; shift ;;
+    # `tricycle graphify …` has its own subcommand parser; stop consuming
+    # once we see it so --run-id and friends aren't rejected here.
+    graphify)
+      POSITIONALS+=("$1"); shift
+      while [ $# -gt 0 ]; do POSITIONALS+=("$1"); shift; done
+      break
+      ;;
     -*) error "Unknown option: $1"; exit 1 ;;
     *) POSITIONALS+=("$1"); shift ;;
   esac
@@ -95,6 +102,7 @@ Usage:
   tricycle skills list                 List installed skills with source and status
   tricycle status [<filter>] [--json] [--all]  Show workflow progress (default: active worktrees only)
   tricycle validate                   Validate configuration and installed files
+  tricycle graphify <sub>              Manage graphify integration (status|install|bootstrap|refresh|mcp-start|mcp-stop)
   tricycle hello-world                Print "Hello, world!"
 
 Options:
@@ -447,12 +455,17 @@ cmd_generate_settings() {
         "hooks": [{"type": "command", "command": ".claude/hooks/post-implement-lint.sh", "timeout": 5}]
       }'
 
-  # UserPromptSubmit: rename-on-kickoff (TRI-31). First — and currently only —
-  # UserPromptSubmit hook; future additions slot in after this entry so the
-  # rename happens before any other pre-turn side effect.
+  # UserPromptSubmit: rename-on-kickoff (TRI-31) + optional graphify refresh.
+  # Rename runs first so the session label is set before any other pre-turn
+  # side effect. Graphify runs second; it's gated behind
+  # `integrations.graphify.enabled` in tricycle.config.yml and is a silent
+  # no-op when the flag is off.
   local prompt_hooks='
       {
-        "hooks": [{"type": "command", "command": ".claude/hooks/rename-on-kickoff.sh", "timeout": 5}]
+        "hooks": [
+          {"type": "command", "command": ".claude/hooks/rename-on-kickoff.sh", "timeout": 5},
+          {"type": "command", "command": ".claude/hooks/graphify-refresh-on-kickoff.sh", "timeout": 5}
+        ]
       }'
 
   # SessionStart: session-context (constitution + extra files)
@@ -1261,6 +1274,277 @@ cmd_hello_world() {
   echo "Hello, world!"
 }
 
+# ─── tricycle graphify <subcommand> ──────────────────────────────────────────
+# Thin wrapper around the `graphify` skill/CLI. Centralizes install detection,
+# graph bootstrap, kickoff refresh, and MCP lifecycle so the kickoff hook,
+# trc.chain orchestrator, and humans can all share one idempotent entry point.
+# See README "Graphify integration" and core/hooks/graphify-refresh-on-kickoff.sh.
+
+# Resolve the `graphify` CLI or the python interpreter that can `-m graphify`.
+# Exports GRAPHIFY_CMD (the command to invoke) on success. Returns non-zero
+# with GRAPHIFY_CMD unset if graphify is neither installed as a shim nor
+# importable as a module.
+_graphify_resolve() {
+  GRAPHIFY_CMD=""
+  if command -v graphify >/dev/null 2>&1; then
+    GRAPHIFY_CMD="graphify"
+    return 0
+  fi
+  local py
+  for py in python3 python; do
+    if command -v "$py" >/dev/null 2>&1 && "$py" -c 'import graphify' >/dev/null 2>&1; then
+      GRAPHIFY_CMD="$py -m graphify"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_graphify_install() {
+  if _graphify_resolve; then
+    echo "graphify already installed ($GRAPHIFY_CMD)"
+    return 0
+  fi
+  local py=""
+  if command -v python3 >/dev/null 2>&1; then py="python3"
+  elif command -v python >/dev/null 2>&1; then py="python"
+  else
+    error "python3 not found on PATH. Install Python 3.10+ and retry."
+    return 1
+  fi
+  # Install graphifyy + the mcp extra so `tricycle graphify mcp-start` works
+  # out of the box. Users who don't need MCP pay a small extra dep cost;
+  # trivial compared to the 22 tree-sitter wheels graphify already pulls in.
+  local pkg='graphifyy[mcp]'
+  echo "Installing $pkg via $py pip..."
+  if "$py" -m pip install --user -q "$pkg" 2>/dev/null; then
+    :
+  elif "$py" -m pip install -q "$pkg" 2>/dev/null; then
+    :
+  elif "$py" -m pip install -q --break-system-packages "$pkg"; then
+    :
+  else
+    error "pip install $pkg failed. Install manually with: $py -m pip install '$pkg'"
+    return 1
+  fi
+  _graphify_resolve || { error "graphify installed but not importable. Check your PYTHONPATH."; return 1; }
+  echo "graphify installed: $GRAPHIFY_CMD"
+}
+
+_graphify_graph_path() {
+  printf '%s/graphify-out/graph.json' "$CWD"
+}
+
+_graphify_status() {
+  local json=0
+  [ "${STATUS_JSON:-0}" = "1" ] && json=1
+  [ "${1:-}" = "--json" ] && json=1
+  local installed=false cmd="" graph=false graph_file mcp_registered=false
+  if _graphify_resolve; then installed=true; cmd="$GRAPHIFY_CMD"; fi
+  graph_file=$(_graphify_graph_path)
+  [ -f "$graph_file" ] && graph=true
+  # MCP "running" in the registration model = present in .mcp.json.
+  if [ -f "$CWD/.mcp.json" ]; then
+    if python3 -c "
+import json, sys
+try:
+  d = json.load(open('$CWD/.mcp.json'))
+  sys.exit(0 if 'graphify' in (d.get('mcpServers') or {}) else 1)
+except Exception:
+  sys.exit(1)
+" 2>/dev/null; then
+      mcp_registered=true
+    fi
+  fi
+  if [ $json -eq 1 ]; then
+    printf '{"installed":%s,"command":"%s","graph":%s,"graph_file":"%s","mcp_registered":%s}\n' \
+      "$installed" "$cmd" "$graph" "$graph_file" "$mcp_registered"
+  else
+    echo "graphify:"
+    echo "  installed:  $installed${cmd:+  ($cmd)}"
+    echo "  graph:      $graph ($graph_file)"
+    echo "  mcp:        $mcp_registered (in .mcp.json)"
+  fi
+}
+
+_graphify_bootstrap() {
+  _graphify_resolve || { error "graphify not installed. Run: tricycle graphify install"; return 1; }
+  mkdir -p "$CWD/graphify-out"
+  echo "Bootstrapping graph at $CWD (AST pass is fast; docs/images need the skill-side pipeline)..."
+  # `graphify update <path>` handles both the "no graph yet" and "refresh"
+  # cases — AST-only, no LLM. For an LLM-enriched build (docs/papers/images),
+  # users run `/graphify .` inside their AI assistant; that's out of scope
+  # for a non-interactive CLI wrapper.
+  # shellcheck disable=SC2086
+  $GRAPHIFY_CMD update . || { error "graphify update . failed"; return 1; }
+  [ -f "$(_graphify_graph_path)" ] || { error "graph.json not produced"; return 1; }
+  echo "Graph built: $(_graphify_graph_path)"
+}
+
+_graphify_refresh() {
+  # Fire-and-forget async refresh. Returns immediately. Used by the kickoff
+  # hook; safe to run manually too. Honors auto_install / auto_bootstrap
+  # config flags passed via environment for the hook path.
+  _graphify_resolve || {
+    if [ "${TRC_GRAPHIFY_AUTO_INSTALL:-false}" = "true" ]; then
+      _graphify_install >/dev/null 2>&1 || return 1
+      _graphify_resolve || return 1
+    else
+      return 0  # silent skip — not installed, not asked to install
+    fi
+  }
+  mkdir -p "$CWD/graphify-out"
+  if [ ! -f "$(_graphify_graph_path)" ]; then
+    if [ "${TRC_GRAPHIFY_AUTO_BOOTSTRAP:-false}" = "true" ]; then
+      # First-time bootstrap. `graphify update .` handles the empty-graph
+      # case by building fresh (AST pass only). Spawn in background so the
+      # hook returns fast; the chain/specify workflow will see the graph on
+      # the next kickoff.
+      nohup bash -c "$GRAPHIFY_CMD update ." \
+        >"$CWD/graphify-out/.refresh.log" 2>&1 &
+      echo $! > "$CWD/graphify-out/.refresh.pid"
+      return 0
+    else
+      return 0  # silent skip — no graph, not asked to bootstrap
+    fi
+  fi
+  # Incremental update: cheap no-op when nothing changed (mtime-based).
+  nohup bash -c "$GRAPHIFY_CMD update ." \
+    >"$CWD/graphify-out/.refresh.log" 2>&1 &
+  echo $! > "$CWD/graphify-out/.refresh.pid"
+  return 0
+}
+
+_graphify_mcp_spawn_cmd() {
+  # Emit the exact command string the caller (or `.mcp.json`) should use to
+  # launch graphify's MCP stdio server. Resolves the python interpreter that
+  # owns the graphify module so the import path is stable.
+  _graphify_resolve || return 1
+  if [ -n "${TRC_GRAPHIFY_MCP_CMD:-}" ]; then
+    printf '%s\n' "$TRC_GRAPHIFY_MCP_CMD"
+    return 0
+  fi
+  local py_cmd
+  if [ "$GRAPHIFY_CMD" = "graphify" ]; then
+    py_cmd=$(head -1 "$(command -v graphify)" | sed 's/^#!//; s/[[:space:]].*//')
+    case "$py_cmd" in
+      /*) : ;;
+      *) py_cmd="python3" ;;
+    esac
+  else
+    py_cmd="${GRAPHIFY_CMD%% *}"
+  fi
+  printf '%s -m graphify.serve\n' "$py_cmd"
+}
+
+_graphify_mcp_start() {
+  # MCP stdio servers are launched by the CLIENT (Claude Code, etc.) via an
+  # `.mcp.json` entry — spawning one as a background daemon doesn't work:
+  # the server exits as soon as its stdio client disconnects. So
+  # `mcp-start` is a REGISTRATION action: it adds a "graphify" entry to
+  # `.mcp.json` so the worker's host will spawn-and-manage it on demand.
+  # `mcp-stop` removes the entry. Idempotent on both sides.
+  local run_id=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --run-id) run_id="${2:-}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  _graphify_resolve || { error "graphify not installed. Run: tricycle graphify install"; return 1; }
+  local mcp_cmd
+  mcp_cmd=$(_graphify_mcp_spawn_cmd) || return 1
+
+  # Per-chain marker so mcp-stop can decide whether to unregister based on
+  # the run that registered it.
+  if [ -n "$run_id" ]; then
+    mkdir -p "$CWD/specs/.chain-runs/$run_id"
+    printf '%s\n' "$mcp_cmd" > "$CWD/specs/.chain-runs/$run_id/graphify.mcp-cmd"
+  fi
+
+  # Merge "graphify" into .mcp.json (creates the file if missing).
+  local mcp_json="$CWD/.mcp.json"
+  python3 - "$mcp_json" "$mcp_cmd" <<'PY' || { error "failed to update .mcp.json"; return 1; }
+import json, sys, os, shlex
+path, cmd_str = sys.argv[1], sys.argv[2]
+if os.path.exists(path):
+    try:
+        data = json.load(open(path))
+    except Exception:
+        data = {}
+else:
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+servers = data.setdefault("mcpServers", {})
+parts = shlex.split(cmd_str)
+servers["graphify"] = {"command": parts[0], "args": parts[1:]}
+os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+  echo "graphify registered in .mcp.json ($mcp_cmd)"
+}
+
+_graphify_mcp_stop() {
+  local run_id=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --run-id) run_id="${2:-}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$run_id" ]; then
+    rm -f "$CWD/specs/.chain-runs/$run_id/graphify.mcp-cmd" 2>/dev/null || true
+  fi
+  local mcp_json="$CWD/.mcp.json"
+  [ -f "$mcp_json" ] || return 0
+  python3 - "$mcp_json" <<'PY'
+import json, sys, os
+path = sys.argv[1]
+try:
+    data = json.load(open(path))
+except Exception:
+    sys.exit(0)
+if not isinstance(data, dict) or "mcpServers" not in data:
+    sys.exit(0)
+data["mcpServers"].pop("graphify", None)
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+  echo "graphify unregistered from .mcp.json"
+}
+
+cmd_graphify() {
+  local sub="${POSITIONALS[1]:-}"
+  # Sub-subcommand positionals (everything after `tricycle graphify <sub>`).
+  local sub_args=()
+  if [ "${#POSITIONALS[@]}" -gt 2 ]; then
+    sub_args=("${POSITIONALS[@]:2}")
+  fi
+  case "$sub" in
+    status)    _graphify_status ${sub_args[@]+"${sub_args[@]}"} ;;
+    install)   _graphify_install ;;
+    bootstrap) _graphify_bootstrap ;;
+    refresh)   _graphify_refresh ;;
+    mcp-start) _graphify_mcp_start ${sub_args[@]+"${sub_args[@]}"} ;;
+    mcp-stop)  _graphify_mcp_stop ${sub_args[@]+"${sub_args[@]}"} ;;
+    "")
+      echo "Usage: tricycle graphify <status|install|bootstrap|refresh|mcp-start|mcp-stop> [args]" >&2
+      echo "" >&2
+      echo "Thin wrapper around the graphify skill (https://github.com/safishamsi/graphify)." >&2
+      echo "See \"Graphify integration\" in the README." >&2
+      exit 1
+      ;;
+    *)
+      error "Unknown subcommand: tricycle graphify $sub"
+      exit 1
+      ;;
+  esac
+}
+
 # ─── Dispatch ────────────────────────────────────────────────────────────────
 
 if [ -z "$COMMAND" ] || [ $HELP -eq 1 ]; then
@@ -1279,6 +1563,7 @@ case "$COMMAND" in
   update-self) cmd_update_self ;;
   dogfood)     cmd_dogfood ;;
   validate)    cmd_validate ;;
+  graphify)    cmd_graphify ;;
   hello-world) cmd_hello_world ;;
   *)
     error "Unknown command: $COMMAND. Run \"tricycle --help\" for usage."

@@ -1030,6 +1030,20 @@ run_test "tricycle dogfood fixture behavior (tests/test-dogfood-cmd.sh)" \
 run_test "core/ and mirrored .trc/.claude/ paths are in sync (tests/test-dogfood-drift.sh)" \
   bash "$REPO_ROOT/tests/test-dogfood-drift.sh"
 
+# ── Graphify integration ──
+
+echo ""
+echo "Graphify integration:"
+
+run_test "generate settings registers graphify hook (tests/test-generate-settings-graphify-hook.sh)" \
+  bash "$REPO_ROOT/tests/test-generate-settings-graphify-hook.sh"
+
+run_test "kickoff hook silent-skip gates (tests/test-graphify-hook-gating.sh)" \
+  bash "$REPO_ROOT/tests/test-graphify-hook-gating.sh"
+
+run_test "tricycle graphify subcommand lifecycle (tests/test-tricycle-graphify-cmd.sh)" \
+  bash "$REPO_ROOT/tests/test-tricycle-graphify-cmd.sh"
+
 # ── trc.review (TRI-28) ──
 
 echo ""
