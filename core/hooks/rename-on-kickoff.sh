@@ -63,17 +63,25 @@ emit() {
         exit 0
     fi
     # jq -c keeps the output on one line and escapes the value correctly.
-    printf '%s' "$title" | jq -Rs '{hookSpecificOutput:{sessionTitle:.}}' 2>/dev/null
+    printf '%s' "$title" | jq -Rs '{hookSpecificOutput:{hookEventName:"UserPromptSubmit", sessionTitle:.}}' 2>/dev/null
     exit 0
 }
 
 derive_chain_label() {
     local arg="$1"
     [ -z "$arg" ] && return 0
-    local first_token
-    first_token=$(printf '%s' "$arg" | awk '{print $1}')
-    [ -z "$first_token" ] && return 0
 
+    # Normalize separators: arrow (→, ->), comma, and whitespace all act as
+    # token delimiters. Keep `..` (range) intact for the range branch below.
+    local normalized
+    normalized=$(printf '%s' "$arg" \
+        | sed 's/→/ /g; s/->/ /g; s/,/ /g' \
+        | awk '{$1=$1; print}')
+    [ -z "$normalized" ] && return 0
+
+    # Range form: first token contains `..` → trc-chain-LEFT..RIGHT
+    local first_token
+    first_token=$(printf '%s' "$normalized" | awk '{print $1}')
     if printf '%s' "$first_token" | grep -q '\.\.'; then
         local left right
         left="${first_token%%..*}"
@@ -84,12 +92,10 @@ derive_chain_label() {
         fi
     fi
 
-    # List or singleton: first,second,third → trc-chain-first+(N-1)
-    # Trim whitespace around commas, count tokens, emit first+count.
-    local cleaned count first
-    cleaned=$(printf '%s' "$first_token" | tr -d '[:space:]')
-    count=$(printf '%s' "$cleaned" | awk -F',' '{c=0; for(i=1;i<=NF;i++) if($i!="") c++; print c}')
-    first=$(printf '%s' "$cleaned" | awk -F',' '{print $1}')
+    # List or singleton: count whitespace-separated tokens → first+(N-1)
+    local count first
+    count=$(printf '%s' "$normalized" | awk '{print NF}')
+    first="$first_token"
     [ -z "$first" ] && return 0
     [ -z "$count" ] && count=1
     printf 'trc-chain-%s+%d' "$first" "$((count - 1))"

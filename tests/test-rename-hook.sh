@@ -79,6 +79,17 @@ assert_eq "chain range" "$(title_of "$out")" "trc-chain-TRI-300..TRI-302"
 out=$(run_hook "/trc.chain TRI-100,TRI-103,POL-42")
 assert_eq "chain list" "$(title_of "$out")" "trc-chain-TRI-100+2"
 
+# ── Case 7b: /trc.chain arrow form (→ and ->) counts all tokens ──────────
+out=$(run_hook "/trc.chain TRI-100 → TRI-103 → POL-42")
+assert_eq "chain arrow unicode" "$(title_of "$out")" "trc-chain-TRI-100+2"
+out=$(run_hook "/trc.chain TRI-100 -> TRI-103 -> POL-42 -> POL-43")
+assert_eq "chain arrow ascii" "$(title_of "$out")" "trc-chain-TRI-100+3"
+
+# ── Case 7c: emission carries hookEventName (CC validator requirement) ───
+out=$(run_hook "/trc.chain TRI-100,TRI-103")
+event=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName // empty' 2>/dev/null)
+assert_eq "hookEventName present" "$event" "UserPromptSubmit"
+
 # ── Case 8: /trc.chain singleton → still prefixed ────────────────────────
 out=$(run_hook "/trc.chain TRI-100")
 assert_eq "chain singleton" "$(title_of "$out")" "trc-chain-TRI-100+0"
