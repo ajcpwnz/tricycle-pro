@@ -44,4 +44,11 @@ PY
 [ -x "$REPO_ROOT/core/hooks/rename-on-kickoff.sh" ] \
   || { echo "FAIL: core/hooks/rename-on-kickoff.sh missing or not executable"; exit 1; }
 
+# `generate settings` registers the hook path; the script file MUST land on
+# disk in the same run — otherwise Claude Code fails every kickoff prompt
+# with "No such file or directory". Regression guard for that bug.
+HOOK="$TMP/.claude/hooks/rename-on-kickoff.sh"
+[ -x "$HOOK" ] \
+  || { echo "FAIL: .claude/hooks/rename-on-kickoff.sh not installed by generate settings"; exit 1; }
+
 echo "generate-settings-rename-hook: OK"
