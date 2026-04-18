@@ -64,6 +64,33 @@ Before executing the chain, validate all prerequisites:
    user and ask whether to resume from the last completed phase or
    start fresh. Wait for their response before proceeding.
 
+## Graphify Orientation (optional)
+
+Before Phase 1 begins, check for a graphify knowledge graph:
+
+```bash
+[ -f graphify-out/graph.json ]
+```
+
+If it exists, keep it open as a lookup channel through every phase — do
+not re-walk the repo with grep when the graph can answer in one call:
+
+- `graphify query "<question>"` — BFS traversal, cheap, no LLM.
+- `graphify explain "<symbol>"` — plain-language node summary.
+- `graphify path "A" "B"` — shortest path between two concepts.
+- MCP tools (if `.mcp.json` has a `graphify` entry): `query_graph`,
+  `get_node`, `get_neighbors`, `get_community`, `god_nodes`,
+  `graph_stats`, `shortest_path`.
+- `graphify-out/GRAPH_REPORT.md` — one-shot orientation.
+
+Edge provenance tags: `EXTRACTED` (found in source), `INFERRED`
+(reasonable guess with confidence), `AMBIGUOUS`. Treat INFERRED as a
+hint, not truth.
+
+If `graphify-out/graph.json` is missing, skip silently — no phase should
+block on graph absence. Do NOT bootstrap mid-workflow; that's the job of
+`tricycle graphify bootstrap` or the kickoff hook.
+
 ## Headless Execution Mode
 
 This command runs the **complete** workflow chain in a single invocation.

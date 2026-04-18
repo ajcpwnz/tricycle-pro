@@ -33,6 +33,32 @@ Run `.trc/scripts/bash/check-prerequisites.sh --json --require-tasks --include-t
 Abort with an error message if any required file is missing (instruct the user to run missing prerequisite command).
 For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
+### 1b. Graphify Cross-Check (optional)
+
+If `graphify-out/graph.json` exists, use it in detection passes below —
+especially for **Coverage Gaps** and **Inconsistency**. The graph lets
+you answer "does the plan reference modules that actually exist?" and
+"does any task touch code we don't have nodes for?" without file-walking
+the tree.
+
+Available tools (pick whichever fits — all cheap, no LLM):
+
+- `graphify query "<module-or-concept>"` — BFS traversal.
+- `graphify explain "<symbol>"` — plain-language node summary.
+- `graphify path "<A>" "<B>"` — shortest path between two concepts.
+- MCP tools (if `.mcp.json` has a `graphify` entry): `query_graph`,
+  `get_node`, `get_neighbors`, `get_community`, `god_nodes`,
+  `graph_stats`, `shortest_path`.
+- `graphify-out/GRAPH_REPORT.md` — god nodes + surprising connections.
+
+Findings from graph-backed checks carry higher confidence than pure
+doc-vs-doc reasoning — cite the specific node or edge that justifies the
+finding. Edge provenance tags (`EXTRACTED`, `INFERRED`, `AMBIGUOUS`)
+apply — downgrade confidence when the supporting evidence is INFERRED.
+
+If `graphify-out/graph.json` is missing, skip silently — fall back to
+artifact-only analysis. Do NOT block on graph absence.
+
 ### 2. Load Artifacts (Progressive Disclosure)
 
 Load only the minimal necessary context from each artifact:
