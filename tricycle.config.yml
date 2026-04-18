@@ -69,3 +69,14 @@ constitution:
 context:
   session_start:
     constitution: true
+
+# Optional integration with the graphify skill (https://github.com/safishamsi/graphify).
+# All flags default off. Flip `enabled: true` and run `tricycle graphify install` +
+# `tricycle graphify bootstrap` once to opt in. See README "Graphify integration".
+integrations:
+  graphify:
+    enabled: false            # master switch for everything in this block
+    auto_install: false       # if true, hook may `pip install graphifyy` when missing
+    auto_bootstrap: false     # if true, hook may run first-time `graphify .` when no graph exists
+    refresh_on_kickoff: true  # run `graphify . --update` async at /trc.specify|/trc.chain|/trc.headless kickoff
+    mcp_per_chain: true       # spawn `graphify --mcp` per chain run and pipe endpoint to workers
