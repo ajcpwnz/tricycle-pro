@@ -496,6 +496,20 @@ graph of your repo. When enabled, tricycle:
 All disabled by default. **Zero impact on upgrade** — when the flag is off, the
 hook is a silent no-op and the chain integration is skipped entirely.
 
+### Language support
+
+Graphify's AST extractor covers Python, JS, TS, Go, Rust, Java, C, C++, Ruby,
+C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C,
+Julia, Verilog, SystemVerilog, Vue, Svelte, and Dart. Bash, shell, YAML, and
+markdown are **not** extracted by the CLI-side build (`tricycle graphify
+bootstrap` / kickoff refresh). For shell-heavy repos the auto-built graph will
+be thin — e.g. on a mostly-Bash toolkit the CLI produced 53 nodes, all from
+the handful of JS test files. The richer, LLM-enriched build — which extracts
+concepts from docs, papers, images, and arbitrary-language code — is the
+skill-side `/graphify .` you run inside your AI assistant, not the CLI. Treat
+the CLI bootstrap as the "code-structure floor"; run the skill form for fuller
+context.
+
 ### Quickstart
 
 ```bash
