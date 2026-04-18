@@ -185,23 +185,64 @@ Proceed? (yes / no)
 Wait for the user's explicit `yes` (or equivalent). On `no` or any
 rejection, abort cleanly — no side effects to undo at this point.
 
-## Epic Brief Prompt
+## Epic Brief Generation
 
-After scope confirmation, ask the user about the shared epic brief:
+After scope confirmation, **synthesize** the shared `epic-brief.md`
+from the ticket context you already have in hand. Do NOT ask the user
+whether to create one — the tickets themselves are the source of truth,
+and the brief is regenerated every run. The user is only prompted as a
+fallback when there is genuinely nothing to synthesize from.
 
-```
-Optional: would you like to attach a shared epic-brief.md to this chain?
-This is the ONLY cross-ticket context workers will share.
+1. **Collect parent projects.** For each fetched ticket, inspect its
+   `project` field (returned by `mcp__linear-server__get_issue`).
+   Collect the unique set of parent project ids/names across the
+   chain (usually 0, 1, or 2 for a coherent run).
 
-  [P]ath — provide a path to an existing brief
-  [C]reate — I'll prompt you for the content inline
-  [S]kip — no shared brief
-```
+2. **Fetch each unique parent project once** via:
+   ```
+   mcp__linear-server__get_project({query: "<project-id-or-name>"})
+   ```
+   Retain only: project name, description/summary, stated goals, and
+   any explicit non-goals or constraints. Discard the rest. On any
+   Linear MCP error here, continue without project context — missing
+   parent-project data is not a chain-abort condition.
 
-- **Path**: ask for the path, verify it exists, remember it for `init`.
-- **Create**: prompt the user for the content (multiline input), write it
-  to a temp file with `mktemp`, remember that path for `init`.
-- **Skip**: no brief path; remember `null`.
+3. **Synthesize the brief.** Combine:
+   - A one-paragraph overview drawn from the parent project(s), or
+     (if no project) a one-paragraph overview inferred from the
+     ticket bodies.
+   - A bullet list of the chain's tickets, each as
+     `- <ticket-id> — <one-line summary drawn from the ticket body>`.
+   - Any cross-ticket dependency or sequencing that is obvious from
+     the ticket bodies (e.g. "B depends on A", "all three share a
+     rollout gate", "tickets assume X has landed").
+   - A "Non-goals" line if the parent project or any ticket body
+     names explicit non-goals.
+
+   Keep the brief under ~40 lines. This is orientation for workers,
+   not a spec. Write it to a temp file via `mktemp`, and remember
+   that path for `init`. Print a two-line confirmation to the user
+   (title + line count + "auto-generated from <N> tickets, <M>
+   parent projects"); do NOT prompt for approval — workers treat
+   the brief as read-only and it is regenerated each run.
+
+4. **Fallback prompt — only when ticket context is genuinely thin.**
+   If after step 2 the total available context is empty or
+   near-empty (all ticket bodies under ~50 characters AND no parent
+   project attached to any ticket), fall back to asking the user:
+   ```
+   Ticket bodies are too thin to auto-generate an epic brief, and
+   no parent Linear project is attached. Choose a fallback:
+
+     [P]ath — provide a path to an existing brief
+     [C]reate — draft one inline
+     [S]kip — no shared brief
+   ```
+   - **Path**: ask for the path, verify it exists, remember it for `init`.
+   - **Create**: prompt the user for the content (multiline input),
+     write it to a temp file with `mktemp`, remember that path for
+     `init`.
+   - **Skip**: no brief path; remember `null`.
 
 ## Run Init
 

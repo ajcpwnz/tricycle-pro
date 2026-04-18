@@ -582,8 +582,10 @@ install_file() {
   content=$(cat "$src")
   checksum=$(sha256_str "$content")
 
-  # Check if file exists and was locally modified
-  if [ -f "$dest" ] && lock_has "$dest_rel"; then
+  # Check if file exists and was locally modified. A caller can pass
+  # FORCE=1 (the global flag set by `tricycle update --force`) to
+  # bypass this guard and overwrite the local edits.
+  if [ -f "$dest" ] && lock_has "$dest_rel" && [ "${FORCE:-0}" -ne 1 ]; then
     local current_checksum
     current_checksum=$(sha256_str "$(cat "$dest")")
     local stored_checksum

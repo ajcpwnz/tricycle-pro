@@ -49,6 +49,7 @@ SHOW_VERSION=0
 STATUS_JSON=0
 STATUS_ALL=0
 DOGFOOD_YES=0
+FORCE=0
 POSITIONALS=()
 
 while [ $# -gt 0 ]; do
@@ -61,6 +62,7 @@ while [ $# -gt 0 ]; do
     --json) STATUS_JSON=1; shift ;;
     --all)  STATUS_ALL=1; shift ;;
     -y|--yes) DOGFOOD_YES=1; shift ;;
+    --force) FORCE=1; shift ;;
     -h|--help) HELP=1; shift ;;
     -v|--version) SHOW_VERSION=1; shift ;;
     -*) error "Unknown option: $1"; exit 1 ;;
@@ -86,7 +88,7 @@ Usage:
   tricycle init [--preset <name>]     Initialize project with Tricycle Pro
   tricycle add <module>               Add optional module (worktree, qa, ci-watch, mcp, memory)
   tricycle generate <target>          Generate files (claude-md, settings, gitignore, mcp)
-  tricycle update [--dry-run]         Update core files to latest version
+  tricycle update [--dry-run] [--force]  Update core files; --force overwrites locally-modified files
   tricycle update-self                Update the tricycle CLI itself
   tricycle dogfood [--yes]            Mirror this repo's core/ into .trc/ and .claude/ (contributor-only)
   tricycle assemble [--dry-run]        Assemble commands from blocks based on workflow config
@@ -777,8 +779,17 @@ cmd_update() {
         current_checksum=$(sha256_str "$(cat "$dest_path")")
         stored_checksum=$(lock_get_checksum "$dest_rel_path")
         if [ "$current_checksum" != "$stored_checksum" ]; then
-          info "SKIP $dest_rel_path (locally modified)"
-          skipped=$((skipped + 1))
+          if [ $FORCE -eq 1 ]; then
+            if [ $DRY_RUN -eq 1 ]; then
+              info "FORCE-UPDATE $dest_rel_path (locally modified, will be overwritten)"
+            else
+              install_file "$src_path" "$dest_rel_path"
+            fi
+            updated=$((updated + 1))
+          else
+            info "SKIP $dest_rel_path (locally modified — re-run with --force to overwrite)"
+            skipped=$((skipped + 1))
+          fi
         elif [ "$new_checksum" != "$stored_checksum" ]; then
           if [ $DRY_RUN -eq 1 ]; then
             info "UPDATE $dest_rel_path"
@@ -800,11 +811,19 @@ cmd_update() {
             lock_set "$dest_rel_path" "$new_checksum" "false"
           fi
           adopted=$((adopted + 1))
+        elif [ $FORCE -eq 1 ]; then
+          # Unmanaged + locally modified, but --force: overwrite and adopt.
+          if [ $DRY_RUN -eq 1 ]; then
+            info "FORCE-ADOPT $dest_rel_path (unmanaged + locally modified, will be overwritten)"
+          else
+            install_file "$src_path" "$dest_rel_path"
+          fi
+          updated=$((updated + 1))
         else
           # Differs from source — treat as user-modified. Record it in the
           # lock as customized so a subsequent update explains itself, but
           # do NOT overwrite the user's file.
-          info "SKIP $dest_rel_path (unmanaged, locally modified — use \`tricycle generate\` or delete the file to accept upstream)"
+          info "SKIP $dest_rel_path (unmanaged, locally modified — re-run with --force to overwrite, or use \`tricycle generate\` / delete the file to accept upstream)"
           if [ $DRY_RUN -eq 0 ]; then
             lock_set "$dest_rel_path" "$current_checksum" "true"
           fi
