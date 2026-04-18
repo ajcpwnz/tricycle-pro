@@ -397,6 +397,15 @@ render_section() {
 }
 
 cmd_generate_settings() {
+  # Install core/hooks/ before wiring hook entries. `generate settings` writes
+  # paths like .claude/hooks/rename-on-kickoff.sh into settings.json; those
+  # must exist on disk or Claude Code logs "No such file or directory" on
+  # every matching event. Mirrors how this command already materializes
+  # .session-context.conf further down.
+  load_lock
+  install_dir "$TOOLKIT_ROOT/core/hooks" ".claude/hooks"
+  save_lock
+
   local perms=()
   perms+=("Edit" "Write")
   perms+=("Bash(git:*)" "Bash(cd:*)" "Bash(ls:*)" "Bash(cp:*)" "Bash(mkdir:*)")
