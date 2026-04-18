@@ -281,6 +281,42 @@ After reading the chain configuration, validate that the user's feature descript
 - A highly detailed prompt always passes regardless of chain length.
 
 
+## Graphify Orientation (optional)
+
+Before extracting concepts from the description or touching spec content,
+check whether this repo has a graphify knowledge graph:
+
+```bash
+[ -f graphify-out/graph.json ]
+```
+
+If it exists, use it to ground "is there already a thing for this?" and
+"where does X live?" questions **before** you start writing the spec. This
+matters for `/trc.specify` because: (a) you often propose concepts that
+already exist under a different name; (b) the spec should reference real
+modules when identifying affected areas.
+
+Useful queries (pick whichever fits — they're all cheap, no LLM):
+
+- `graphify query "<concept from the user's description>"` — BFS across the
+  graph. Good for "does anything like X already exist?".
+- `graphify explain "<symbol-or-module>"` — plain-language node summary.
+- `graphify path "<A>" "<B>"` — shortest path between two concepts.
+- MCP tools (if `.mcp.json` has a `graphify` entry): `query_graph`,
+  `get_node`, `get_neighbors`, `get_community`, `god_nodes`, `graph_stats`,
+  `shortest_path`.
+- `graphify-out/GRAPH_REPORT.md` — one-shot orientation: god nodes,
+  surprising connections, suggested questions.
+
+Edges are tagged `EXTRACTED` (found in source), `INFERRED` (reasonable
+guess with a confidence score), or `AMBIGUOUS`. Treat INFERRED as a hint,
+not truth.
+
+If `graphify-out/graph.json` is missing, skip this section silently —
+proceed with the normal spec flow. Do NOT attempt to bootstrap a graph
+mid-workflow; that's the job of `tricycle graphify bootstrap` or the
+kickoff hook. Do NOT block the flow on graph absence.
+
 ## Execution Flow
 
 1. Parse user description from Input
