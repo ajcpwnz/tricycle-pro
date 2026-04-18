@@ -171,9 +171,8 @@ Do not spawn any worker until every ticket body is in hand.
 ## Scope Echo
 
 Print the fetched ticket list as a one-shot status line, then proceed
-immediately to the next step. Do NOT prompt for confirmation — the user
-supplied the ticket IDs when invoking `/trc.chain`, so launching the
-command IS the confirmation.
+immediately to the next step. The user supplied the ticket IDs when
+invoking `/trc.chain`, so launching the command IS the confirmation.
 
 ```
 Running /trc.chain on:
@@ -182,11 +181,26 @@ Running /trc.chain on:
   3. TRI-102 — Password reset flow
 ```
 
-Only interrupt with a question here if something is genuinely
-ambiguous that the user could not have known about at invocation time
-(e.g., the fetched tickets span more than two unrelated parent
-projects, suggesting a likely typo). In that case, surface the specific
-concern — do not fall back to a generic "Proceed? (yes / no)" gate.
+**MUST NOT** emit any confirmation prompt at this step — no "Proceed?",
+no "yes / no", no "continue?", no variant. This rule is absolute and has
+no exceptions. The scope line exists so the user can Ctrl+C if the list
+is wrong; that is the only abort path.
+
+If you notice something that looks odd (tickets under different parent
+Linear **projects**, an obvious outlier, a label mismatch), fold it into
+the scope line as a non-blocking note and keep going — never convert a
+concern into a gate. Parent *tickets* are not parent *projects*; cross-
+linked tickets inside the same project are not ambiguity.
+
+```
+Running /trc.chain on:
+  1. POL-590 — Widget static hosting
+  2. POL-591 — Cross-browser + CSP suite
+  3. POL-639 — Analytics pipeline
+  4. POL-644 — Branding theme apply
+Note: POL-644 has a different parent ticket but the same parent
+project (Embedding) — proceeding.
+```
 
 ## Epic Brief Generation
 

@@ -45,4 +45,13 @@ need "resume section explains chain-run.sh dismiss" -F "chain-run.sh dismiss"
 need "orchestrator ticks shared docs after chain" -F "Shared-Doc Post-Chain Tick"
 need "workers forbidden from editing shared docs" -F "forbidden from editing shared planning documents"
 
+# #10 — scope-echo never gates with a yes/no prompt (absolute, no exceptions)
+need "scope echo forbids any confirmation prompt" -F 'MUST NOT** emit any confirmation prompt'
+need "scope echo names parent-ticket vs parent-project distinction" -F "Parent *tickets* are not parent *projects*"
+# Forbid any resurrection of the old generic gate anywhere in the template.
+if grep -qE 'Proceed\? *\(yes */ *no\)' "$TARGET"; then
+  echo "FAIL: trc.chain.md still contains 'Proceed? (yes / no)' gate text"
+  exit 1
+fi
+
 echo "chain-md-contract: OK"
