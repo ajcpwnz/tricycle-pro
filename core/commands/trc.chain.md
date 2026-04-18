@@ -168,26 +168,29 @@ mcp__linear-server__get_issue({id: "<ticket-id>"})
 
 Do not spawn any worker until every ticket body is in hand.
 
-## Scope Confirmation
+## Scope Echo
 
-Print the ticket list for the user to review:
+Print the fetched ticket list as a one-shot status line, then proceed
+immediately to the next step. Do NOT prompt for confirmation — the user
+supplied the ticket IDs when invoking `/trc.chain`, so launching the
+command IS the confirmation.
 
 ```
-Ready to run /trc.chain on these tickets:
-
+Running /trc.chain on:
   1. TRI-100 — Add user authentication
   2. TRI-101 — Profile page
   3. TRI-102 — Password reset flow
-
-Proceed? (yes / no)
 ```
 
-Wait for the user's explicit `yes` (or equivalent). On `no` or any
-rejection, abort cleanly — no side effects to undo at this point.
+Only interrupt with a question here if something is genuinely
+ambiguous that the user could not have known about at invocation time
+(e.g., the fetched tickets span more than two unrelated parent
+projects, suggesting a likely typo). In that case, surface the specific
+concern — do not fall back to a generic "Proceed? (yes / no)" gate.
 
 ## Epic Brief Generation
 
-After scope confirmation, **synthesize** the shared `epic-brief.md`
+After the scope echo, **synthesize** the shared `epic-brief.md`
 from the ticket context you already have in hand. Do NOT ask the user
 whether to create one — the tickets themselves are the source of truth,
 and the brief is regenerated every run. The user is only prompted as a
