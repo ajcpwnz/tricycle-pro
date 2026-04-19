@@ -64,32 +64,42 @@ Before executing the chain, validate all prerequisites:
    user and ask whether to resume from the last completed phase or
    start fresh. Wait for their response before proceeding.
 
-## Graphify Orientation (optional)
+## Graphify Context
 
-Before Phase 1 begins, check for a graphify knowledge graph:
+**Runtime gate — evaluate before acting on this block.** This block is
+active for this run if AND ONLY IF both conditions hold:
 
-```bash
-[ -f graphify-out/graph.json ]
-```
+1. `tricycle.config.yml` has `integrations.graphify.enabled: true`.
+2. `graphify-out/graph.json` exists at the repo root.
 
-If it exists, keep it open as a lookup channel through every phase — do
-not re-walk the repo with grep when the graph can answer in one call:
+If either check fails, skip this entire section — it does not apply and
+you MUST NOT attempt any graphify call. Continue with normal
+grep/read/file-based exploration through every phase.
 
-- `graphify query "<question>"` — BFS traversal, cheap, no LLM.
-- `graphify explain "<symbol>"` — plain-language node summary.
-- `graphify path "A" "B"` — shortest path between two concepts.
-- MCP tools (if `.mcp.json` has a `graphify` entry): `query_graph`,
-  `get_node`, `get_neighbors`, `get_community`, `god_nodes`,
-  `graph_stats`, `shortest_path`.
-- `graphify-out/GRAPH_REPORT.md` — one-shot orientation.
+If both checks pass, keep the graph open as a lookup channel through
+every phase — do not re-walk the repo with grep when the graph can
+answer in one call:
+
+- **GRAPH REPORT** (read once for orientation):
+  `graphify-out/GRAPH_REPORT.md` — god nodes, surprising connections.
+- **LOCAL QUERY** (cheap, no MCP needed):
+  - `graphify query "<question>"` — BFS traversal.
+  - `graphify explain "<symbol>"` — plain-language node summary.
+  - `graphify path "A" "B"` — shortest path between two concepts.
+- **RAW JSON**: `graphify-out/graph.json` when you need every edge.
+- **MCP** (only if `.mcp.json` has a `graphify` entry AND it was
+  registered before this `claude` session started): tools
+  `{query_graph, get_node, get_neighbors, get_community, god_nodes,
+  graph_stats, shortest_path}`. Mid-session `.mcp.json` edits do NOT
+  hot-load, so do not assume these tools exist — probe by calling one
+  and fall back to the shell CLI above on failure.
 
 Edge provenance tags: `EXTRACTED` (found in source), `INFERRED`
 (reasonable guess with confidence), `AMBIGUOUS`. Treat INFERRED as a
 hint, not truth.
 
-If `graphify-out/graph.json` is missing, skip silently — no phase should
-block on graph absence. Do NOT bootstrap mid-workflow; that's the job of
-`tricycle graphify bootstrap` or the kickoff hook.
+Do NOT bootstrap mid-workflow; that's the job of `tricycle graphify
+bootstrap` or the kickoff hook.
 
 ## Headless Execution Mode
 

@@ -349,36 +349,16 @@ PRE-PROVISIONED WORKTREE:
 RUN DIRECTORY: specs/.chain-runs/<run-id>/
 
 GRAPHIFY CONTEXT:
-<if graphify not enabled or graph missing: "No knowledge graph for this repo. Read the files directly as usual.">
-<if graphify enabled AND graph exists:
-"A knowledge graph of this repo is available to short-circuit the usual
- 'open files to find things' loop. Prefer querying it BEFORE wide file reads:
-
-   - GRAPH REPORT (read once for orientation): graphify-out/GRAPH_REPORT.md
-     — lists god nodes, surprising connections, and suggested questions.
-   - LOCAL QUERY (cheap): `graphify query \"<your question>\"` or
-     `graphify explain \"<symbol-or-concept>\"` or
-     `graphify path \"<A>\" \"<B>\"` for shortest path between two concepts.
-   - RAW JSON: graphify-out/graph.json (when you need every edge).
-   - MCP (if .mcp.json has a `graphify` entry): tools {query_graph,
-     get_node, get_neighbors, get_community, god_nodes, graph_stats,
-     shortest_path}. Your Claude Code host spawns and manages the stdio
-     server automatically — just call the tools by name.
-
- WHEN to query: architectural questions (where is X defined, who calls Y,
- what depends on Z), code-location lookups before grepping, 'is there
- already a util for this?'. Every edge carries a provenance tag —
- EXTRACTED (found directly), INFERRED (reasonable guess with confidence),
- AMBIGUOUS (flagged). Treat INFERRED as a hint, not truth.
-
- WHEN NOT to query: trivial one-file edits, cosmetic fixes, anything where
- you already know the exact file path. The graph is a shortcut, not a
- mandatory gate.
-
- STALENESS: the graph is refreshed automatically by the kickoff hook
- before you started. If you touch code and then need to re-query the
- updated state, run `graphify . --update` yourself — do NOT trust stale
- nodes after you've mutated the tree.">
+The worker's assembled /trc.* commands each carry a `## Graphify Context`
+block with a runtime gate that is active IFF both:
+  (1) `integrations.graphify.enabled: true` in tricycle.config.yml, AND
+  (2) `graphify-out/graph.json` exists.
+When both conditions hold, the worker will query graphify (via the
+`graphify query|path|explain` CLI, or MCP tools if `.mcp.json` had a
+`graphify` entry at claude-session start) before falling back to wide
+grep/read. When either condition fails, graphify is skipped silently.
+No per-run gating is needed from the orchestrator — the block in each
+step command is the single source of truth for the agent's behavior.>
 
 TASK: Run /trc.headless end-to-end for this ticket. After /trc.headless
 finishes (lint + test green, version bumped), explicitly create a local
