@@ -276,35 +276,6 @@ Capture `run_id`, `state_path`, `brief_path` from the stdout JSON. Store
 them as orchestrator working memory for the rest of the execution. On any
 helper error, surface it and abort.
 
-## Graphify MCP Registration (optional)
-
-If the project has opted in to the graphify integration
-(`integrations.graphify.enabled: true` AND `integrations.graphify.mcp_per_chain:
-true` in `tricycle.config.yml`) AND a graph exists at
-`graphify-out/graph.json`, register a `graphify` entry in `.mcp.json` so
-worker sub-agents' Claude Code hosts can spawn and manage the MCP stdio
-server on demand:
-
-```bash
-./bin/tricycle graphify mcp-start --run-id <run_id>
-```
-
-- MCP stdio servers are launched by the client (Claude Code), not as a
-  background daemon — spawning one manually and disowning it produces a
-  dead process as soon as stdin disconnects. The wrapper updates
-  `.mcp.json`; the worker's host takes care of the actual spawn.
-- On any non-zero exit (graphify not installed, graph missing), log a
-  one-line warning and continue — **this is never a chain abort
-  condition.** Workers fall back to reading `graphify-out/*` directly if
-  the MCP isn't registered.
-- At chain close (every path through `## Summary`), tear down with:
-  ```bash
-  ./bin/tricycle graphify mcp-stop --run-id <run_id>
-  ```
-  Best-effort — log warnings, never fail the chain on teardown errors.
-
-Skip this step entirely (no warning) when the feature flag is off.
-
 ## Worker Brief Template
 
 Each worker is a fire-and-report sub-agent: it runs the full trc workflow
@@ -730,14 +701,6 @@ After the loop completes (successfully, partially, or stopped-on-failure):
    bash core/scripts/bash/chain-run.sh close \
      --run-id "<run_id>" --terminal-status completed
    ```
-
-4. **Graphify MCP teardown.** If `## Graphify MCP Spawn` was performed at
-   chain init, tear down the MCP server as a best-effort step — the chain
-   is done with it:
-   ```bash
-   ./bin/tricycle graphify mcp-stop --run-id "<run_id>"
-   ```
-   Log any warning but never treat teardown failure as a chain failure.
 
 4. Print the summary table and a one-line footer with the run-id so the
    user can reference it later.

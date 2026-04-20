@@ -1044,6 +1044,9 @@ run_test "kickoff hook silent-skip gates (tests/test-graphify-hook-gating.sh)" \
 run_test "tricycle graphify subcommand lifecycle (tests/test-tricycle-graphify-cmd.sh)" \
   bash "$REPO_ROOT/tests/test-tricycle-graphify-cmd.sh"
 
+run_test "graphify briefing contract (tests/test-graphify-briefing-contract.sh)" \
+  bash "$REPO_ROOT/tests/test-graphify-briefing-contract.sh"
+
 # ── trc.review (TRI-28) ──
 
 echo ""
