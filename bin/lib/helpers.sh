@@ -461,7 +461,11 @@ install_skills() {
       continue
     fi
 
-    install_dir "$skill_path" "$dest_rel_base/$skill_name"
+    # SOURCE is always regenerated below with run-specific content (date,
+    # commit), so never install core's copy: installing it would lock a
+    # checksum the regeneration immediately invalidates, leaving SOURCE
+    # permanently "locally modified" in every consumer repo.
+    install_dir "$skill_path" "$dest_rel_base/$skill_name" SOURCE
 
     # Generate SOURCE for vendored skills
     local dest_skill="$CWD/$dest_rel_base/$skill_name"
@@ -471,6 +475,10 @@ install_skills() {
         commit=$(git rev-parse HEAD 2>/dev/null || true)
       fi
       generate_source_file "$dest_skill" "vendored:core/skills/$skill_name" "$commit"
+      # Lock the regenerated content so SOURCE reads as clean on the next
+      # run (this also heals lock entries frozen by the pre-fix abort).
+      lock_set "$dest_rel_base/$skill_name/SOURCE" \
+        "$(sha256_str "$(cat "$dest_skill/SOURCE")")" "false"
       info "WRITE $dest_rel_base/$skill_name/SOURCE"
     fi
   done
@@ -539,6 +547,8 @@ fetch_external_skill() {
       local commit
       commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null || echo "")
       generate_source_file "$dest_skill" "$source_uri" "$commit"
+      lock_set "$dest_base/$skill_name/SOURCE" \
+        "$(sha256_str "$(cat "$dest_skill/SOURCE")")" "false"
       info "WRITE $dest_base/$skill_name/SOURCE"
 
       rm -rf "$tmpdir"
@@ -561,6 +571,8 @@ fetch_external_skill() {
       cp -R "$src_path"/.* "$dest_skill/" 2>/dev/null || true
 
       generate_source_file "$dest_skill" "$source_uri" ""
+      lock_set "$dest_base/$skill_name/SOURCE" \
+        "$(sha256_str "$(cat "$dest_skill/SOURCE")")" "false"
       info "FETCH local:$path"
       info "WRITE $dest_base/$skill_name/SOURCE"
       ;;
@@ -610,13 +622,25 @@ install_file() {
 }
 
 install_dir() {
-  local src_dir="$1" dest_rel_dir="$2"
+  local src_dir="$1" dest_rel_dir="$2" exclude_name="${3:-}"
   [ -d "$src_dir" ] || return 0
 
   # Use process substitution to keep while loop in current shell
   # so that LOCK_FILES modifications persist
   while IFS= read -r src_path; do
     local rel="${src_path#"$src_dir"/}"
-    install_file "$src_path" "$dest_rel_dir/$rel"
-  done < <(find "$src_dir" -type f | sort)
+    # A skip (locally modified, install_file returns 1) is an expected
+    # outcome, not an error. Without `|| true`, a skipped file that sorts
+    # last in the directory becomes the loop's — and install_dir's — exit
+    # status, and `set -e` aborts the whole update before save_lock runs,
+    # freezing every file written in that run as "locally modified".
+    install_file "$src_path" "$dest_rel_dir/$rel" || true
+  done < <(
+    if [ -n "$exclude_name" ]; then
+      find "$src_dir" -type f ! -name "$exclude_name" | sort
+    else
+      find "$src_dir" -type f | sort
+    fi
+  )
+  return 0
 }

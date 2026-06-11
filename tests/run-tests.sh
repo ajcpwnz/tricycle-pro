@@ -980,6 +980,9 @@ run_test "trc.chain.md contract rules present (tests/test-chain-md-contract.sh)"
 run_test "tricycle update adopts unmanaged files (tests/test-tricycle-update-adopt.sh)" \
   bash "$REPO_ROOT/tests/test-tricycle-update-adopt.sh"
 
+run_test "update survives skipped files + skill SOURCE stays clean (tests/test-update-skip-resilience.sh)" \
+  bash "$REPO_ROOT/tests/test-update-skip-resilience.sh"
+
 run_test "tricycle update-self exec-finalize avoids self-replace race (tests/test-update-self-exec.sh)" \
   bash "$REPO_ROOT/tests/test-update-self-exec.sh"
 
