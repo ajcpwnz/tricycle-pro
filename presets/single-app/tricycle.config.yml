@@ -22,6 +22,10 @@ mcp:
 qa:
   enabled: false
 
+# /trc.band epic orchestration: max concurrent sub-issue workers (1-8)
+band:
+  max_parallel: 3
+
 push:
   require_approval: true
   require_lint: true

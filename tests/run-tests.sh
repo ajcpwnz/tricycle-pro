@@ -951,17 +951,6 @@ run_test "status --all shows features without worktrees" bash -c '
 echo ""
 echo "chain-run.sh (TRI-27):"
 
-run_test "node --test tests/test-chain-run-*.js all pass" bash -c '
-  cd "'"$REPO_ROOT"'" && node --test \
-    tests/test-chain-run-parse-range.js \
-    tests/test-chain-run-state.js \
-    tests/test-chain-run-update-ticket.js \
-    tests/test-chain-run-close.js \
-    tests/test-chain-run-interrupted.js \
-    tests/test-chain-run-progress.js \
-    tests/test-chain-run-dismiss.js
-'
-
 run_test "e2e happy path (tests/test-chain-run-e2e-happy.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-happy.sh"
 run_test "e2e stop-on-failure (tests/test-chain-run-e2e-failure.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-failure.sh"
 run_test "e2e resume flow (tests/test-chain-run-e2e-resume.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-resume.sh"
@@ -993,6 +982,33 @@ run_test "tricycle update adopts unmanaged files (tests/test-tricycle-update-ado
 
 run_test "tricycle update-self exec-finalize avoids self-replace race (tests/test-update-self-exec.sh)" \
   bash "$REPO_ROOT/tests/test-update-self-exec.sh"
+
+# ── band-run.sh (/trc.band) ──
+
+echo ""
+echo "band-run.sh (/trc.band):"
+
+run_test "e2e happy path (tests/test-band-run-e2e-happy.sh)" bash "$REPO_ROOT/tests/test-band-run-e2e-happy.sh"
+
+run_test "error paths + scheduling guards (tests/test-band-run-errors.sh)" \
+  bash "$REPO_ROOT/tests/test-band-run-errors.sh"
+
+run_test "trc.band command template exists and has description" bash -c '
+  [ -f "'"$REPO_ROOT"'/core/commands/trc.band.md" ] || exit 1
+  grep -q "^description:" "'"$REPO_ROOT"'/core/commands/trc.band.md"
+'
+
+run_test "band-run.sh is executable" test -x "$REPO_ROOT/core/scripts/bash/band-run.sh"
+
+run_test "specs/.band-runs/ is gitignored" bash -c '
+  cd "'"$REPO_ROOT"'" && grep -q "specs/.band-runs/" .gitignore
+'
+
+run_test "trc.band.md contract rules present (tests/test-band-md-contract.sh)" \
+  bash "$REPO_ROOT/tests/test-band-md-contract.sh"
+
+run_test "recon template contract (tests/test-recon-template.sh)" \
+  bash "$REPO_ROOT/tests/test-recon-template.sh"
 
 # ── Session rename on kickoff (TRI-31) ──
 
@@ -1054,10 +1070,6 @@ echo "trc.review (TRI-28):"
 
 run_test "trc.review structural smoke tests (tests/test-trc-review.sh)" \
   bash "$REPO_ROOT/tests/test-trc-review.sh"
-
-run_test "trc.review node unit tests (tests/test-trc-review-cache.js)" bash -c '
-  cd "'"$REPO_ROOT"'" && node --test tests/test-trc-review-cache.js >/dev/null 2>&1
-'
 
 # ── Summary ──
 

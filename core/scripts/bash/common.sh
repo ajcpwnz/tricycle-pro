@@ -311,6 +311,45 @@ parse_chain_config() {
     fi
 }
 
+# Parse band.max_parallel from tricycle.config.yml.
+# Returns an integer 1-8. Defaults to 3 when the file, the band: section,
+# or the key is missing, or when the value is not a valid integer in range.
+parse_band_config() {
+    local config_file="$1"
+    local default=3
+
+    if [[ ! -f "$config_file" ]]; then
+        echo "$default"
+        return 0
+    fi
+
+    local in_band=0
+    local value=""
+
+    while IFS= read -r line; do
+        # Detect band: section
+        if [[ "$line" =~ ^band: ]]; then
+            in_band=1
+            continue
+        fi
+        # Exit band section on next top-level key
+        if [[ $in_band -eq 1 ]] && [[ "$line" =~ ^[a-z] ]] && [[ ! "$line" =~ ^[[:space:]] ]]; then
+            in_band=0
+        fi
+        # Read max_parallel within band
+        if [[ $in_band -eq 1 ]] && [[ "$line" =~ ^[[:space:]]+max_parallel: ]]; then
+            value=$(printf '%s' "$line" | sed 's/.*max_parallel:[[:space:]]*//' | sed 's/[[:space:]]*#.*//' | sed 's/[[:space:]]*$//')
+            break
+        fi
+    done < "$config_file"
+
+    if [[ "$value" =~ ^[0-9]+$ ]] && (( value >= 1 && value <= 8 )); then
+        echo "$value"
+    else
+        echo "$default"
+    fi
+}
+
 # Parse block overrides for a specific step from tricycle.config.yml.
 # Outputs lines like: disable=block-name, enable=block-name, custom=path
 parse_block_overrides() {

@@ -27,5 +27,8 @@ node_modules/
 # Runtime chain-run state (from /trc.chain)
 specs/.chain-runs/
 
+# Runtime band-run state (from /trc.band)
+specs/.band-runs/
+
 # Graphify generated outputs (opt-in integration)
 graphify-out/

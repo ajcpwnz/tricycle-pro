@@ -21,7 +21,7 @@ PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty' 2>/dev/null)
 # Strip leading whitespace; only act on kickoff commands.
 TRIMMED="${PROMPT#"${PROMPT%%[![:space:]]*}"}"
 case "$TRIMMED" in
-    /trc.specify*|/trc.headless*|/trc.chain*) ;;
+    /trc.specify*|/trc.headless*|/trc.chain*|/trc.band*) ;;
     *) exit 0 ;;
 esac
 
@@ -101,6 +101,17 @@ derive_chain_label() {
     printf 'trc-chain-%s+%d' "$first" "$((count - 1))"
 }
 
+derive_band_label() {
+    local arg="$1"
+    [ -z "$arg" ] && return 0
+
+    # First PREFIX-NUMBER token is the parent issue id.
+    local parent
+    parent=$(printf '%s' "$arg" | grep -oE '[A-Z][A-Z0-9]*-[0-9]+' | head -1)
+    [ -z "$parent" ] && return 0
+    printf 'trc-band-%s' "$parent"
+}
+
 derive_feature_label() {
     local arg="$1"
     [ -z "$arg" ] && return 0
@@ -145,6 +156,9 @@ derive_feature_label() {
 case "$COMMAND" in
     /trc.chain)
         LABEL=$(derive_chain_label "$ARGSTR")
+        ;;
+    /trc.band)
+        LABEL=$(derive_band_label "$ARGSTR")
         ;;
     /trc.specify|/trc.headless)
         LABEL=$(derive_feature_label "$ARGSTR")

@@ -39,11 +39,17 @@ for cmd in specify plan tasks implement headless; do
   check_flow_cmd "$REPO_ROOT/core/commands/trc.$cmd.md"
 done
 
-# Chain skill: must not reference the dead per-chain MCP dance.
-chain="$REPO_ROOT/core/commands/trc.chain.md"
-[ -f "$chain" ] || fail "missing: $chain"
-if grep -Eq 'graphify (mcp-start|mcp-stop)' "$chain"; then
-  fail "$chain still references the dead per-chain graphify mcp-start/mcp-stop dance"
-fi
+# Orchestrator skills (chain, band): must not reference the dead per-chain
+# MCP dance. They are not flow commands, so they carry the gate inside the
+# worker brief instead of a `## Graphify Context` section.
+for orch in chain band; do
+  f="$REPO_ROOT/core/commands/trc.$orch.md"
+  [ -f "$f" ] || fail "missing: $f"
+  if grep -Eq 'graphify (mcp-start|mcp-stop)' "$f"; then
+    fail "$f still references the dead per-chain graphify mcp-start/mcp-stop dance"
+  fi
+  grep -q 'integrations\.graphify\.enabled' "$f" \
+    || fail "$f worker brief is missing the integrations.graphify.enabled gate"
+done
 
 echo "graphify-briefing-contract: OK"

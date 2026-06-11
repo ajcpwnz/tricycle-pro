@@ -94,9 +94,25 @@ assert_eq "hookEventName present" "$event" "UserPromptSubmit"
 out=$(run_hook "/trc.chain TRI-100")
 assert_eq "chain singleton" "$(title_of "$out")" "trc-chain-TRI-100+0"
 
+# ── Case 8b: /trc.band parent issue → trc-band-<ID> ──────────────────────
+out=$(run_hook "/trc.band TRI-200")
+assert_eq "band parent" "$(title_of "$out")" "trc-band-TRI-200"
+
+# ── Case 8c: /trc.band with trailing words still picks the first token ───
+out=$(run_hook "/trc.band TRI-200 payments revamp")
+assert_eq "band parent with words" "$(title_of "$out")" "trc-band-TRI-200"
+
+# ── Case 8d: /trc.band without an issue id → empty stdout (fallback) ─────
+out=$(run_hook "/trc.band no ticket here")
+assert_eq "band no id" "$out" ""
+
 # ── Case 9: idempotency — already matches → empty stdout ─────────────────
 out=$(run_hook "/trc.chain TRI-300..TRI-302" "trc-chain-TRI-300..TRI-302")
 assert_eq "chain idempotent" "$out" ""
+
+# ── Case 9b: band idempotency ─────────────────────────────────────────────
+out=$(run_hook "/trc.band TRI-200" "trc-band-TRI-200")
+assert_eq "band idempotent" "$out" ""
 
 # ── Case 10: leading whitespace tolerated ────────────────────────────────
 out=$(run_hook "   /trc.chain TRI-400..TRI-401")

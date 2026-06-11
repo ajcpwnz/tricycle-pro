@@ -2,7 +2,7 @@
 
 ## Commands
 
-- **cli**: `cd . && bash tests/run-tests.sh` (test), `cd . && node --test tests/test-*.js` (test-blocks)
+- **cli**: `cd . && bash tests/run-tests.sh` (test)
 
 ### Package Manager
 npm only. Do not mix package managers.

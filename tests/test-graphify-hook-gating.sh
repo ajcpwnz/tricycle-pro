@@ -86,6 +86,8 @@ YAML
 rm -rf "$TMP/graphify-out"
 run_hook "/trc.chain FOO-1,FOO-2"
 assert_no_residue "refresh_on_kickoff false"
+run_hook "/trc.band FOO-1"
+assert_no_residue "refresh_on_kickoff false (band)"
 
 # ── Gate 3: graphify not installed AND auto_install false ──────────────────
 # Shield the test from any graphify actually installed on the host by

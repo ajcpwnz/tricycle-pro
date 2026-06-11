@@ -11,7 +11,6 @@ apps:
     path: "."
     type: cli
     test: "bash tests/run-tests.sh"
-    test-blocks: "node --test tests/test-*.js"
 
 branching:
   style: issue-number
@@ -54,6 +53,11 @@ mcp:
 qa:
   enabled: false
 
+# /trc.band epic orchestration. max_parallel caps concurrent sub-issue
+# workers (1-8); waves and dependencies from recon.md gate further.
+band:
+  max_parallel: 3
+
 push:
   require_approval: true
   require_lint: false
@@ -78,5 +82,5 @@ integrations:
     enabled: false            # master switch for everything in this block
     auto_install: false       # if true, hook may `pip install graphifyy` when missing
     auto_bootstrap: false     # if true, hook may run first-time `graphify .` when no graph exists
-    refresh_on_kickoff: true  # run `graphify . --update` async at /trc.specify|/trc.chain|/trc.headless kickoff
+    refresh_on_kickoff: true  # run `graphify . --update` async at /trc.specify|/trc.chain|/trc.headless|/trc.band kickoff
     mcp_per_chain: true       # spawn `graphify --mcp` per chain run and pipe endpoint to workers

@@ -64,6 +64,17 @@ Every feature flows through a chain of steps. Each step produces structured arti
 
 Additional commands: `/trc.analyze` (consistency audit), `/trc.checklist` (quality checklists), `/trc.constitution` (project principles), `/trc.taskstoissues` (GitHub issue creation).
 
+### Orchestrators
+
+Two commands run the workflow across multiple tickets instead of one:
+
+| Command | Shape | Execution | Push policy |
+|---------|-------|-----------|-------------|
+| `/trc.chain TRI-100..TRI-105` | Flat range/list of 2–8 independent tickets | Serial, fire-and-report worker per ticket | Approval per ticket |
+| `/trc.band TRI-200` | One parent issue broken into sub-issues | Parallel step-controlled workers in dependency waves | One approval for the whole epic |
+
+`/trc.band` takes a parent Linear issue, fetches its sub-issues, and performs codebase recon into `specs/.band-runs/<run-id>/recon.md` — a high-level epic spec (from `recon-template.md`) with a dependency roadmap: waves of parallel-safe sub-issues, a complexity rating, and a worker model assignment per sub-issue. After the user approves the recon, it fans out background worker agents (up to `band.max_parallel`, default 3), each in its own git worktree, each running the configured `workflow.chain` **one step at a time** — every step reports back, and the orchestrator reviews it and issues the next step with any concerns folded in. Workers never pause: genuine ambiguity comes back as a structured `blocked` report, the whole band pauses, and the user is asked. Completed branches merge locally into an integration branch (`band/<PARENT-ID>`) in roadmap order with rebase-on-conflict (capped at 2 rounds). Nothing is pushed until the epic is done and fully verified — then one approval gate, one push, one epic PR.
+
 ### Audit
 
 `/trc.audit` evaluates scoped files against the project constitution, a custom prompt, or common-sense best practices.
@@ -384,6 +395,9 @@ workflow:
 worktree:
   enabled: false
   path_pattern: "../{project}-{branch}"
+
+band:
+  max_parallel: 3                 # /trc.band: max concurrent sub-issue workers (1-8)
 
 push:
   require_approval: true
