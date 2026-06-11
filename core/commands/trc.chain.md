@@ -69,12 +69,19 @@ Before doing anything ELSE (after the rename above):
 2. **Project init check**. Verify `tricycle.config.yml` and `.trc/` exist.
    If either is missing, STOP and tell the user to run `npx tricycle-pro init`.
 
+3. **Helper path**. Every `chain-run.sh` snippet in this command references
+   `.trc/scripts/bash/chain-run.sh` — the canonical location in consumer
+   installs (landed by `tricycle update`) and in this toolkit repo (mirrored
+   by `tricycle dogfood`). If that file is missing (e.g. a fresh toolkit
+   checkout before dogfood), substitute `core/scripts/bash/chain-run.sh` in
+   every invocation.
+
 ## Resume Detection
 
 Call the helper to find any interrupted runs from a previous session:
 
 ```bash
-bash core/scripts/bash/chain-run.sh list-interrupted
+bash .trc/scripts/bash/chain-run.sh list-interrupted
 ```
 
 Parse the JSON. If `runs` is non-empty, surface each one to the user:
@@ -132,7 +139,7 @@ Wait for the user's choice for each run before proceeding.
 Call:
 
 ```bash
-bash core/scripts/bash/chain-run.sh parse-range "$ARGUMENTS"
+bash .trc/scripts/bash/chain-run.sh parse-range "$ARGUMENTS"
 ```
 
 On non-zero exit, the stderr JSON contains the error code and message —
@@ -266,7 +273,7 @@ fallback when there is genuinely nothing to synthesize from.
 Call the helper with the parsed ids and (optionally) the brief:
 
 ```bash
-bash core/scripts/bash/chain-run.sh init \
+bash .trc/scripts/bash/chain-run.sh init \
   --ids '<json-array-of-ids>' \
   --ids-raw '<original-user-input>' \
   [--brief '<path-if-any>']
@@ -428,7 +435,7 @@ For each ticket ID in order:
 
 1. **Mark in_progress**:
    ```bash
-   bash core/scripts/bash/chain-run.sh update-ticket \
+   bash .trc/scripts/bash/chain-run.sh update-ticket \
      --run-id "<run_id>" --ticket "<ticket-id>" \
      --status in_progress --started-now
    ```
@@ -457,7 +464,7 @@ For each ticket ID in order:
    reading its return — and on every loop iteration if you're polling
    between phases — read the progress file with:
    ```bash
-   bash core/scripts/bash/chain-run.sh progress \
+   bash .trc/scripts/bash/chain-run.sh progress \
      --run-id "<run_id>" --ticket "<ticket-id>"
    ```
    The phase value uses the `_complete` suffix (or `committed` for the
@@ -473,7 +480,7 @@ For each ticket ID in order:
    - **5a. status == "committed"**: the worker has made a local commit on
      its feature branch and exited cleanly. Record the commit:
      ```bash
-     bash core/scripts/bash/chain-run.sh update-ticket \
+     bash .trc/scripts/bash/chain-run.sh update-ticket \
        --run-id "<run_id>" --ticket "<ticket-id>" \
        --status committed --commit-sha "<commit_sha>" \
        --branch "<branch>" \
@@ -486,12 +493,12 @@ For each ticket ID in order:
      non-null, OR `lint_status == "fail"`, OR `test_status == "fail"`):
      mark the ticket failed, close the run, stop the chain.
      ```bash
-     bash core/scripts/bash/chain-run.sh update-ticket \
+     bash .trc/scripts/bash/chain-run.sh update-ticket \
        --run-id "<run_id>" --ticket "<ticket-id>" \
        --status failed --finished-now \
        --branch "<branch or omit>" \
        --lint "<lint_status>" --test "<test_status>"
-     bash core/scripts/bash/chain-run.sh close \
+     bash .trc/scripts/bash/chain-run.sh close \
        --run-id "<run_id>" --terminal-status failed \
        --reason "<short reason>"
      ```
@@ -557,7 +564,7 @@ No sub-agent message-forwarding is involved. The worker is already dead.
       ```
       Capture the PR URL. Mark the ticket `pushed`:
       ```bash
-      bash core/scripts/bash/chain-run.sh update-ticket \
+      bash .trc/scripts/bash/chain-run.sh update-ticket \
         --run-id "<run_id>" --ticket "<ticket-id>" \
         --status pushed --pr "<pr_url>"
       ```
@@ -591,7 +598,7 @@ No sub-agent message-forwarding is involved. The worker is already dead.
 
       Mark the ticket `merged` whenever the server-side state is MERGED:
       ```bash
-      bash core/scripts/bash/chain-run.sh update-ticket \
+      bash .trc/scripts/bash/chain-run.sh update-ticket \
         --run-id "<run_id>" --ticket "<ticket-id>" --status merged
       ```
 
@@ -609,7 +616,7 @@ No sub-agent message-forwarding is involved. The worker is already dead.
 
    f. **Mark `completed`**:
       ```bash
-      bash core/scripts/bash/chain-run.sh update-ticket \
+      bash .trc/scripts/bash/chain-run.sh update-ticket \
         --run-id "<run_id>" --ticket "<ticket-id>" \
         --status completed --finished-now
       ```
@@ -680,7 +687,7 @@ After the loop completes (successfully, partially, or stopped-on-failure):
 
 1. Read the final state:
    ```bash
-   bash core/scripts/bash/chain-run.sh get --run-id "<run_id>"
+   bash .trc/scripts/bash/chain-run.sh get --run-id "<run_id>"
    ```
 
 2. Render a markdown summary table with columns:
@@ -698,7 +705,7 @@ After the loop completes (successfully, partially, or stopped-on-failure):
 3. If the run is not already terminally closed (it is if we hit
    stop-on-failure), call:
    ```bash
-   bash core/scripts/bash/chain-run.sh close \
+   bash .trc/scripts/bash/chain-run.sh close \
      --run-id "<run_id>" --terminal-status completed
    ```
 

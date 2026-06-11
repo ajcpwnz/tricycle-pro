@@ -88,7 +88,14 @@ Before doing anything ELSE (after the rename above):
 3. **Project init check**. Verify `tricycle.config.yml` and `.trc/` exist.
    If either is missing, STOP and tell the user to run `npx tricycle-pro init`.
 
-4. **Read the run configuration**:
+4. **Helper path**. Every `band-run.sh` snippet in this command references
+   `.trc/scripts/bash/band-run.sh` — the canonical location in consumer
+   installs (landed by `tricycle update`) and in this toolkit repo (mirrored
+   by `tricycle dogfood`). If that file is missing (e.g. a fresh toolkit
+   checkout before dogfood), substitute `core/scripts/bash/band-run.sh` in
+   every invocation.
+
+5. **Read the run configuration**:
    - `max_parallel` via `parse_band_config` (sourced from
      `.trc/scripts/bash/common.sh`; reads `band.max_parallel`, default 3).
    - The configured trc flow steps via `parse_chain_config` (reads
@@ -102,7 +109,7 @@ Before doing anything ELSE (after the rename above):
 Call the helper to find any interrupted runs from a previous session:
 
 ```bash
-bash core/scripts/bash/band-run.sh list-interrupted
+bash .trc/scripts/bash/band-run.sh list-interrupted
 ```
 
 Parse the JSON. If `runs` is non-empty, surface each one to the user:
@@ -316,7 +323,7 @@ Only after recon approval:
    ```
 3. **Init the run state**:
    ```bash
-   bash core/scripts/bash/band-run.sh init \
+   bash .trc/scripts/bash/band-run.sh init \
      --parent "<PARENT-ID>" \
      --issues '<json array of {id,title,branch,worktree,complexity,model,wave,depends_on}>' \
      --recon "<temp recon path>" \
@@ -504,7 +511,7 @@ Repeat until every issue is terminal (`merged`/`completed`/`failed`/
 
 1. **Query the scheduler primitive**:
    ```bash
-   bash core/scripts/bash/band-run.sh next-ready --run-id "<run_id>"
+   bash .trc/scripts/bash/band-run.sh next-ready --run-id "<run_id>"
    ```
    It returns `{"spawn": [...], "continue": [...], "running": [...],
    "blocked": [...], "dep_failed": [...], "slots": N, "paused": bool}`.
@@ -516,7 +523,7 @@ Repeat until every issue is terminal (`merged`/`completed`/`failed`/
 
 3. **Spawn** each issue in `spawn`: mark the first step running —
    ```bash
-   bash core/scripts/bash/band-run.sh update-step \
+   bash .trc/scripts/bash/band-run.sh update-step \
      --run-id "<run_id>" --issue "<issue-id>" \
      --step "<first step>" --step-status running
    ```
@@ -536,7 +543,7 @@ Repeat until every issue is terminal (`merged`/`completed`/`failed`/
    finishes its turn. While waiting, you may surface per-issue progress
    on demand:
    ```bash
-   bash core/scripts/bash/band-run.sh progress --run-id "<run_id>" --issue "<issue-id>"
+   bash .trc/scripts/bash/band-run.sh progress --run-id "<run_id>" --issue "<issue-id>"
    ```
    Displayed as `[<issue-id>] last completed: <phase>`. Do NOT stream
    worker transcripts.
@@ -596,7 +603,7 @@ When any worker reports `status: "blocked"`:
 1. Record the questions (`update-step --step-status blocked --question
    "<q>"` per question) and pause the run:
    ```bash
-   bash core/scripts/bash/band-run.sh pause --run-id "<run_id>" \
+   bash .trc/scripts/bash/band-run.sh pause --run-id "<run_id>" \
      --issue "<issue-id>" --reason "<one-line>"
    ```
    While paused, `next-ready` returns empty `spawn`/`continue` — no new
@@ -653,7 +660,7 @@ When a sub-issue reaches `committed`:
    ```
    On success:
    ```bash
-   bash core/scripts/bash/band-run.sh update-issue \
+   bash .trc/scripts/bash/band-run.sh update-issue \
      --run-id "<run_id>" --issue "<issue-id>" --status merged \
      --merged-sha "$(git -C .worktrees/band-<PARENT-ID> rev-parse HEAD)"
    ```
@@ -663,7 +670,7 @@ When a sub-issue reaches `committed`:
    agent in that worktree with the rebase brief if the worker is dead).
    When the rebase report arrives with the new sha, record it:
    ```bash
-   bash core/scripts/bash/band-run.sh update-issue \
+   bash .trc/scripts/bash/band-run.sh update-issue \
      --run-id "<run_id>" --issue "<issue-id>" --status merged \
      --commit-sha "<new sha>" --increment-rebase --merged-sha "<...>"
    ```
@@ -760,7 +767,7 @@ After the run reaches a terminal condition (shipped, aborted, or failed):
 
 1. Read the final state:
    ```bash
-   bash core/scripts/bash/band-run.sh get --run-id "<run_id>"
+   bash .trc/scripts/bash/band-run.sh get --run-id "<run_id>"
    ```
 2. Render a markdown summary table:
    `| Sub-issue | Branch | Steps | Complexity | Model | Lint | Test | Status |`
@@ -769,7 +776,7 @@ After the run reaches a terminal condition (shipped, aborted, or failed):
    `pending` → "—".
 3. If the run is not already terminally closed, call:
    ```bash
-   bash core/scripts/bash/band-run.sh close \
+   bash .trc/scripts/bash/band-run.sh close \
      --run-id "<run_id>" --terminal-status completed
    ```
 4. Print the table, the epic PR URL (if any), and a one-line footer with

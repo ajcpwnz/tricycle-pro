@@ -41,6 +41,20 @@ need "worker brief forbids hedging in open_questions on committed" -F "ERR_COMMI
 need "resume prompt documents Dismiss" -F "Dismiss"
 need "resume section explains chain-run.sh dismiss" -F "chain-run.sh dismiss"
 
+# #11 — helper invocations use the consumer-install path (.trc/), never the
+# toolkit-only core/ path (which does not exist in consumer repos). The
+# core/ path may appear only once, in the documented fallback note.
+need "helper invoked via .trc path" -F ".trc/scripts/bash/chain-run.sh"
+core_refs=$(grep -c 'core/scripts/bash/chain-run\.sh' "$TARGET" || true)
+if [ "$core_refs" -gt 1 ]; then
+  echo "FAIL: trc.chain.md invokes the toolkit-only core/scripts path ($core_refs refs; only the fallback note may mention it)"
+  exit 1
+fi
+if grep -q 'bash core/scripts/bash/chain-run\.sh' "$TARGET"; then
+  echo "FAIL: trc.chain.md contains a literal 'bash core/scripts/bash/chain-run.sh' invocation"
+  exit 1
+fi
+
 # #9 — shared-doc post-chain tick
 need "orchestrator ticks shared docs after chain" -F "Shared-Doc Post-Chain Tick"
 need "workers forbidden from editing shared docs" -F "forbidden from editing shared planning documents"

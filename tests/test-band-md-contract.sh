@@ -63,6 +63,20 @@ need "scope echo forbids confirmation prompts" -F 'MUST NOT** emit any confirmat
 need "scheduler uses next-ready" -F "band-run.sh next-ready"
 need "dead-worker respawn rule" -F "Dead-worker rule"
 
+# Helper invocations must use the consumer-install path (.trc/), never the
+# toolkit-only core/ path (which does not exist in consumer repos). The
+# core/ path may appear only once, in the documented fallback note.
+need "helper invoked via .trc path" -F ".trc/scripts/bash/band-run.sh"
+core_refs=$(grep -c 'core/scripts/bash/band-run\.sh' "$TARGET" || true)
+if [ "$core_refs" -gt 1 ]; then
+  echo "FAIL: trc.band.md invokes the toolkit-only core/scripts path ($core_refs refs; only the fallback note may mention it)"
+  exit 1
+fi
+if grep -q 'bash core/scripts/bash/band-run\.sh' "$TARGET"; then
+  echo "FAIL: trc.band.md contains a literal 'bash core/scripts/bash/band-run.sh' invocation"
+  exit 1
+fi
+
 # Push policy: single final gate, nothing remote before it.
 need "no remote mutation before the gate" -F "No remote mutation of any kind"
 need "workers never push" -F "NEVER PUSH"
