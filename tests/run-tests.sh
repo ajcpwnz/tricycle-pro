@@ -1074,6 +1074,14 @@ echo "trc.review (TRI-28):"
 run_test "trc.review structural smoke tests (tests/test-trc-review.sh)" \
   bash "$REPO_ROOT/tests/test-trc-review.sh"
 
+# ── Stealth mode (TRI-21) ──
+
+echo ""
+echo "Stealth mode (TRI-21):"
+
+run_test "stealth keeps .claude committed, hides only internals (tests/test-stealth-keeps-claude-committed.sh)" \
+  bash "$REPO_ROOT/tests/test-stealth-keeps-claude-committed.sh"
+
 # ── Summary ──
 
 echo ""

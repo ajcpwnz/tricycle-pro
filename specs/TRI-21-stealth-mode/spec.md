@@ -5,6 +5,21 @@
 **Status**: Draft
 **Input**: User description: "Stealth mode for repos where tricycle cannot check any files into source control. A config field used by assemble or similar so when it's on, full tricycle setup works in local dirs but nothing appears in commits."
 
+> **Amendment (2026-07-07): `.claude/` config is committed even under stealth.**
+> Stealth mode no longer hides `.claude/`. The Claude Code config users curate —
+> `.claude/settings.json`, `commands/`, `hooks/`, `skills/` — is now whitelisted
+> into the committed `.gitignore` in **both** modes, so hooks and settings are
+> always version-controlled and portable. Stealth continues to hide only
+> tricycle's own internals: `.trc/`, `specs/`, `tricycle.config.yml`,
+> `tricycle.config.local.yml`, `.tricycle.lock`, `.mcp.json`.
+>
+> This **supersedes** Acceptance Scenarios 1.3 and 2.2 below and amends
+> **FR-008**. Rationale: hiding `.claude/` left the user's own Claude Code
+> hooks/guardrails unversioned and non-portable — defeating the point of
+> curating them. Accepted consequence: in tricycle-managed repos the committed
+> `.claude/` reveals tricycle's `trc.*` commands and hooks. Covered by
+> `tests/test-stealth-keeps-claude-committed.sh`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Enable Stealth Mode in a Repository (Priority: P1)
@@ -87,7 +102,7 @@ The stealth mode setting must be stored in a location that is itself not committ
 - **FR-005**: All workflow commands (specify, plan, tasks, implement, clarify, analyze, etc.) MUST function identically in stealth mode — the flag affects only version-control visibility, not workflow behavior.
 - **FR-006**: When stealth mode is toggled off, system MUST remove stealth-specific gitignore rules so tricycle files become visible to version control again.
 - **FR-007**: System MUST NOT modify or remove user-authored gitignore rules when adding or removing stealth rules.
-- **FR-008**: The gitignore rules applied in stealth mode MUST cover at minimum: `tricycle.config.yml`, `.tricycle.lock`, `.claude/` (all contents), `.trc/`, and `specs/`.
+- **FR-008** *(amended 2026-07-07)*: The stealth ignore block MUST cover at minimum: `tricycle.config.yml`, `tricycle.config.local.yml`, `.tricycle.lock`, `.trc/`, `specs/`, and `.mcp.json`. It MUST NOT cover `.claude/` — the Claude Code config (`settings.json`, `commands/`, `hooks/`, `skills/`) is committed via the `.claude/*` whitelist written to `.gitignore` in both stealth and normal mode.
 
 ### Key Entities
 

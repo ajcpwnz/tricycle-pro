@@ -546,6 +546,27 @@ stealth_remove_block() {
   fi
 }
 
+# Claude Code config (settings/commands/hooks/skills) is committed even under
+# stealth — stealth hides only tricycle's own internals, never .claude/. Ensure
+# the whitelist is present in the committed .gitignore.
+ensure_claude_gitignore() {
+  local gitignore_path="$1"
+  [ -f "$gitignore_path" ] && grep -q '\.claude/\*' "$gitignore_path" && return 0
+  local block
+  block=$(cat << 'CLAUDE'
+
+# Claude Code — keep settings.json, commands, hooks, skills committed
+.claude/*
+!.claude/settings.json
+!.claude/commands/
+!.claude/hooks/
+!.claude/skills/
+CLAUDE
+)
+  printf '%s\n' "$block" >> "$gitignore_path"
+  info "UPDATE .gitignore (.claude committed even under stealth)"
+}
+
 cmd_generate_gitignore() {
   local gitignore_path="$CWD/.gitignore"
   local git_dir exclude_path
@@ -580,25 +601,16 @@ cmd_generate_gitignore() {
     stealth_remove_block "$gitignore_path"
     if [ -n "$exclude_path" ]; then stealth_remove_block "$exclude_path"; fi
 
-    # Remove normal-mode block from .gitignore (stealth replaces it)
-    if [ -f "$gitignore_path" ] && grep -q '\.claude/\*' "$gitignore_path"; then
-      local tmp
-      tmp=$(mktemp)
-      awk '
-        /^# Claude Code —.*committed$/ { skip=1; next }
-        skip && /^\.tricycle\.lock$/ { skip=0; next }
-        skip { next }
-        { print }
-      ' "$gitignore_path" > "$tmp"
-      mv "$tmp" "$gitignore_path"
-    fi
+    # Claude Code config stays committed even under stealth — keep the
+    # whitelist in the committed .gitignore. Stealth hides only tricycle's
+    # own internals (below), never .claude/.
+    ensure_claude_gitignore "$gitignore_path"
 
     # Write stealth block if not already present
     local stealth_block
     stealth_block=$(cat << 'STEALTH'
 
 # >>> tricycle stealth (do not edit this block)
-.claude/
 .trc/
 specs/
 tricycle.config.yml
