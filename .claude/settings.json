@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": ["Edit", "Write", "Bash(git:*)", "Bash(cd:*)", "Bash(ls:*)", "Bash(cp:*)", "Bash(mkdir:*)", "Bash(npm:*)", "Bash(npx:*)", "Bash(node:*)", "Bash(./scripts:*)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [{"type": "command", "command": ".claude/hooks/post-implement-lint.sh", "timeout": 5}]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {"type": "command", "command": ".claude/hooks/rename-on-kickoff.sh", "timeout": 5},
+          {"type": "command", "command": ".claude/hooks/graphify-refresh-on-kickoff.sh", "timeout": 5}
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [{"type": "command", "command": ".claude/hooks/session-context.sh", "timeout": 10}]
+      }
+    ]
+  }
+}

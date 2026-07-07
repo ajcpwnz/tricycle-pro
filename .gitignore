@@ -7,7 +7,7 @@ node_modules/
 
 # Dogfood: installed copies live here but source-of-truth is core/ and modules/
 # Ignore everything tricycle init installs so it doesn't duplicate source files in git
-.claude/
+# (.claude/ is handled by the whitelist block below — keep settings/commands/hooks/skills)
 .trc/
 .mcp.json
 
