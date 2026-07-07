@@ -103,14 +103,18 @@ fi
 # Nothing valid → exit silently
 [ -z "$content" ] && exit 0
 
-# Truncate at 150,000 characters. A mature root constitution plus per-app
-# context can exceed 50k; the old cap silently dropped later principles
-# (agent-conduct rules live near the end) from session-start injection.
-max_len=150000
+# Truncation is a safety bound against a runaway/misconfigured injection eating
+# the context window — NOT a product limit. It's configurable, not a magic
+# constant: set `context.session_start.max_chars` in tricycle.config.yml and
+# `tricycle generate` writes it as a "# max_chars: N" directive into the conf
+# above. Absent that, the default is high enough never to clip a normal
+# constitution (so it can't silently drop principles the way the old 50k cap did).
+max_len=$(awk -F': ' '/^# max_chars:/{print $2; exit}' "$CONF")
+case "$max_len" in ''|*[!0-9]*) max_len=1000000;; esac
 if [ "${#content}" -gt "$max_len" ]; then
     content="${content:0:$max_len}
 
-[Content truncated at 150,000 characters. Reduce context.session_start.files to stay within limit.]"
+[Content truncated at ${max_len} characters — raise context.session_start.max_chars in tricycle.config.yml or trim context.session_start.files.]"
 fi
 
 # Output hook response

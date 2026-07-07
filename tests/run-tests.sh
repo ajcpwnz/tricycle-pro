@@ -1082,6 +1082,14 @@ echo "Stealth mode (TRI-21):"
 run_test "stealth keeps .claude committed, hides only internals (tests/test-stealth-keeps-claude-committed.sh)" \
   bash "$REPO_ROOT/tests/test-stealth-keeps-claude-committed.sh"
 
+# ── Session-context injection cap (configurable) ──
+
+echo ""
+echo "Session-context cap:"
+
+run_test "session-context max_chars is configurable, not a magic constant (tests/test-session-context-max-chars.sh)" \
+  bash "$REPO_ROOT/tests/test-session-context-max-chars.sh"
+
 # ── Summary ──
 
 echo ""
