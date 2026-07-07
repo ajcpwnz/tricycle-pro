@@ -103,12 +103,14 @@ fi
 # Nothing valid → exit silently
 [ -z "$content" ] && exit 0
 
-# Truncate at 50,000 characters
-max_len=50000
+# Truncate at 150,000 characters. A mature root constitution plus per-app
+# context can exceed 50k; the old cap silently dropped later principles
+# (agent-conduct rules live near the end) from session-start injection.
+max_len=150000
 if [ "${#content}" -gt "$max_len" ]; then
     content="${content:0:$max_len}
 
-[Content truncated at 50,000 characters. Reduce context.session_start.files to stay within limit.]"
+[Content truncated at 150,000 characters. Reduce context.session_start.files to stay within limit.]"
 fi
 
 # Output hook response
