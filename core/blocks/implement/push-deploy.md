@@ -9,7 +9,7 @@ order: 65
 
 ## Push, PR & Deploy
 
-After every checklist item is done, tests pass, and the version is bumped, execute the push/PR/merge workflow:
+After every checklist item is done and tests pass (and the version-bump block, when enabled, has run), execute the push/PR/merge workflow:
 
 ### 0. Local testing gate
 

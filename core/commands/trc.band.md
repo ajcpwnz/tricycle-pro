@@ -405,8 +405,8 @@ no suffixes, because the pre-push marker convention binds to
 RUN DIRECTORY: specs/.band-runs/<run-id>/
 
 GRAPHIFY CONTEXT:
-The assembled /trc.* commands each carry a `## Graphify Context` block
-with a runtime gate that is active IFF both:
+The assembled /trc.* commands carry a `## Graphify Context` block, unless
+`workflow.blocks` disables it. Its runtime gate is active IFF both:
   (1) `integrations.graphify.enabled: true` in tricycle.config.yml, AND
   (2) `graphify-out/graph.json` exists.
 When both conditions hold, query graphify before falling back to wide

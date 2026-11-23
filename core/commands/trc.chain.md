@@ -409,8 +409,8 @@ PRE-PROVISIONED WORKTREE:
 RUN DIRECTORY: specs/.chain-runs/<run-id>/
 
 GRAPHIFY CONTEXT:
-The worker's assembled /trc.* commands each carry a `## Graphify Context`
-block with a runtime gate that is active IFF both:
+The worker's assembled /trc.* commands carry a `## Graphify Context` block,
+unless `workflow.blocks` disables it. Its runtime gate is active IFF both:
   (1) `integrations.graphify.enabled: true` in tricycle.config.yml, AND
   (2) `graphify-out/graph.json` exists.
 When both conditions hold, the worker will query graphify (via the
@@ -493,7 +493,7 @@ HARD CONTRACT:
    the marker is required, create it in the correct location before
    the orchestrator runs `git push`.
 
-6. EXPLICIT COMMIT. After the gates pass and the version is bumped, run:
+6. EXPLICIT COMMIT. After the gates pass (and the version bump, when that block is enabled), run:
      git add -A
      git commit -m "<ticket-id>: <one-line summary of the change>"
      COMMIT_SHA=$(git rev-parse HEAD)

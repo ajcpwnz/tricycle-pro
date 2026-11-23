@@ -54,7 +54,7 @@ model_for() { # <key> <default>
 step_description() {
     case "$1" in
         plan)      echo "Write or revalidate a spec (analysis, proposed solution, checklist) for a request, ticket or spec file." ;;
-        implement) echo "Implement a spec that passes the validator: work its checklist, test, and ship." ;;
+        implement) echo "Implement a spec that passes the validator. Work its checklist, test, and ship." ;;
     esac
 }
 

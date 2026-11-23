@@ -1,5 +1,5 @@
 ---
-description: Implement a spec that passes the validator: work its checklist, test, and ship.
+description: Implement a spec that passes the validator. Work its checklist, test, and ship.
 model: opus
 ---
 
@@ -121,7 +121,7 @@ After every checklist item is done and tests pass, before reporting completion:
 
 ## Push, PR & Deploy
 
-After every checklist item is done, tests pass, and the version is bumped, execute the push/PR/merge workflow:
+After every checklist item is done and tests pass (and the version-bump block, when enabled, has run), execute the push/PR/merge workflow:
 
 ### 1. Read push configuration
 
