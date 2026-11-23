@@ -214,9 +214,11 @@ load_config() {
   fi
 }
 
+# Prints the value, or nothing for a missing key. Always returns 0, so a missing
+# key never aborts a caller running under `set -e -o pipefail`.
 cfg_get() {
   local key="$1"
-  echo "$CONFIG_DATA" | grep -m1 "^${key}=" | cut -d= -f2-
+  echo "$CONFIG_DATA" | grep -m1 "^${key}=" | cut -d= -f2- || true
 }
 
 cfg_has() {
@@ -291,14 +293,8 @@ choose() {
 
 # ─── File Operations ─────────────────────────────────────────────────────────
 
-write_file() {
-  local filepath="$1" content="$2"
-  mkdir -p "$(dirname "$filepath")"
-  printf '%s' "$content" > "$filepath"
-}
-
 # ─── Lock File ───────────────────────────────────────────────────────────────
-# LOCK_FILES: tab-separated lines of filepath\tchecksum\tcustomized
+# LOCK_FILES: tab-separated lines of filepath\tchecksum
 
 LOCK_VERSION="0.1.0"
 LOCK_INSTALLED=""
@@ -320,7 +316,7 @@ load_lock() {
     /"files"/ { in_files = 1; next }
     !in_files { next }
     {
-      if (/"[^"]*"[[:space:]]*:[[:space:]]*\{/ && !/checksum|customized|version|installed|files/) {
+      if (/"[^"]*"[[:space:]]*:[[:space:]]*\{/) {
         line = $0
         sub(/^[[:space:]]*"/, "", line)
         sub(/".*/, "", line)
@@ -330,13 +326,7 @@ load_lock() {
         line = $0
         sub(/.*"checksum"[[:space:]]*:[[:space:]]*"/, "", line)
         sub(/".*/, "", line)
-        cs = line
-      }
-      if (cur != "" && /customized/) {
-        line = $0
-        sub(/.*:[[:space:]]*/, "", line)
-        sub(/[,[:space:]}].*/, "", line)
-        printf "%s\t%s\t%s\n", cur, cs, line
+        printf "%s\t%s\n", cur, line
         cur = ""
       }
     }
@@ -353,12 +343,11 @@ save_lock() {
 
     local first=1
     if [ -n "$LOCK_FILES" ]; then
-      while IFS=$'\t' read -r filepath checksum customized; do
+      while IFS=$'\t' read -r filepath checksum; do
         [ -z "$filepath" ] && continue
         [ $first -eq 0 ] && printf ','
         printf '\n    "%s": {\n' "$filepath"
-        printf '      "checksum": "%s",\n' "$checksum"
-        printf '      "customized": %s\n' "$customized"
+        printf '      "checksum": "%s"\n' "$checksum"
         printf '    }'
         first=0
       done <<< "$LOCK_FILES"
@@ -368,24 +357,18 @@ save_lock() {
   } > "$lock_path"
 }
 
-lock_get_checksum() {
-  echo "$LOCK_FILES" | awk -F'\t' -v path="$1" '$1 == path { print $2; exit }'
-}
-
-lock_is_customized() {
-  local val
-  val=$(echo "$LOCK_FILES" | awk -F'\t' -v path="$1" '$1 == path { print $3; exit }')
-  [ "$val" = "true" ]
-}
-
 lock_has() {
   echo "$LOCK_FILES" | grep -q "^${1}	"
 }
 
+lock_remove() {
+  LOCK_FILES=$(echo "$LOCK_FILES" | awk -F'\t' -v p="$1" '$1 != p' | sed '/^$/d')
+}
+
 lock_set() {
-  local filepath="$1" checksum="$2" customized="$3"
+  local filepath="$1" checksum="$2"
   local new_entry
-  new_entry=$(printf '%s\t%s\t%s' "$filepath" "$checksum" "$customized")
+  new_entry=$(printf '%s\t%s' "$filepath" "$checksum")
 
   if [ -z "$LOCK_FILES" ]; then
     LOCK_FILES="$new_entry"
@@ -454,9 +437,15 @@ install_skills() {
     # Skip disabled
     if echo "$disabled" | grep -q " ${skill_name} "; then
       info "SKIP .claude/skills/$skill_name (disabled)"
-      # Warn if already installed
+      # A disabled skill that trc installed is removed; a repo's own copy stays.
       if [ -d "$CWD/$dest_rel_base/$skill_name" ]; then
-        info "NOTICE: $dest_rel_base/$skill_name is disabled but still installed (delete manually if unwanted)"
+        if lock_has "$dest_rel_base/$skill_name/SKILL.md"; then
+          rm -rf "${CWD:?}/$dest_rel_base/$skill_name"
+          LOCK_FILES=$(echo "$LOCK_FILES" | awk -F'\t' -v p="$dest_rel_base/$skill_name/" 'index($1, p) != 1' | sed '/^$/d')
+          info "REMOVE $dest_rel_base/$skill_name (disabled)"
+        else
+          info "NOTICE: $dest_rel_base/$skill_name is disabled but is not managed by trc; it stays"
+        fi
       fi
       continue
     fi
@@ -470,16 +459,18 @@ install_skills() {
     # Generate SOURCE for vendored skills
     local dest_skill="$CWD/$dest_rel_base/$skill_name"
     if [ -d "$dest_skill" ]; then
-      local commit=""
-      if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
-        commit=$(git rev-parse HEAD 2>/dev/null || true)
+      # SOURCE changes only when the skill content changes, so an update with
+      # no new skill content leaves it as it is. The commit is the toolkit's.
+      if [ "$(source_get "$dest_skill/SOURCE" checksum 2>/dev/null)" != "$(skill_checksum "$dest_skill")" ] \
+         || [ "$(source_get "$dest_skill/SOURCE" origin 2>/dev/null)" != "vendored:core/skills/$skill_name" ]; then
+        local commit=""
+        commit=$(git -C "$skill_path" rev-parse HEAD 2>/dev/null || true)
+        generate_source_file "$dest_skill" "vendored:core/skills/$skill_name" "$commit"
+        info "WRITE $dest_rel_base/$skill_name/SOURCE"
       fi
-      generate_source_file "$dest_skill" "vendored:core/skills/$skill_name" "$commit"
-      # Lock the regenerated content so SOURCE reads as clean on the next
-      # run (this also heals lock entries frozen by the pre-fix abort).
+      # Lock SOURCE as it is, so it reads as clean on the next run.
       lock_set "$dest_rel_base/$skill_name/SOURCE" \
-        "$(sha256_str "$(cat "$dest_skill/SOURCE")")" "false"
-      info "WRITE $dest_rel_base/$skill_name/SOURCE"
+        "$(sha256_str "$(cat "$dest_skill/SOURCE")")"
     fi
   done
 }
@@ -594,30 +585,54 @@ install_file() {
   content=$(cat "$src")
   checksum=$(sha256_str "$content")
 
-  # Check if file exists and was locally modified. A caller can pass
-  # FORCE=1 (the global flag set by `tricycle update --force`) to
-  # bypass this guard and overwrite the local edits.
-  if [ -f "$dest" ] && lock_has "$dest_rel" && [ "${FORCE:-0}" -ne 1 ]; then
-    local current_checksum
-    current_checksum=$(sha256_str "$(cat "$dest")")
-    local stored_checksum
-    stored_checksum=$(lock_get_checksum "$dest_rel")
-    if [ "$current_checksum" != "$stored_checksum" ]; then
-      info "SKIP $dest_rel (locally modified)"
-      lock_set "$dest_rel" "$stored_checksum" "true"
-      return 1
-    fi
+  # An identical file is not rewritten.
+  if cmp -s "$src" "$dest"; then
+    lock_set "$dest_rel" "$checksum"
+    return 0
   fi
 
+  # Copy the bytes, then rename: a hook that another session runs at this
+  # moment sees the old file or the new one, never a partial write.
   mkdir -p "$(dirname "$dest")"
-  printf '%s' "$content" > "$dest"
-
+  cp "$src" "$dest.tmp.$$"
   case "$src" in
-    *.sh) chmod +x "$dest" ;;
+    *.sh) chmod +x "$dest.tmp.$$" ;;
   esac
+  mv -f "$dest.tmp.$$" "$dest"
 
-  lock_set "$dest_rel" "$checksum" "false"
+  lock_set "$dest_rel" "$checksum"
   info "WRITE $dest_rel"
+  return 0
+}
+
+# A core hook is wanted when its config switch is on and it is not named in
+# claude.disable_core_hooks. `generate settings` registers only wanted hooks,
+# and init/update install only their scripts.
+core_hook_wanted() { # <name without .sh>
+  local i=0 n
+  n=$(cfg_count "claude.disable_core_hooks")
+  while [ "$i" -lt "$n" ]; do
+    [ "$(cfg_get_or "claude.disable_core_hooks.$i" "")" = "$1" ] && return 1
+    i=$((i + 1))
+  done
+  case "$1" in
+    guard-main-checkout) [ "$(cfg_get "worktree.enabled")" = "true" ] ;;
+    style-gate) [ "$(cfg_get_or "style.artifacts" "")" = "ste-short" ] ;;
+    session-context)
+      [ "$(cfg_get_or "context.session_start.constitution" "true")" != "false" ] \
+        || [ "$(cfg_count "context.session_start.files")" -gt 0 ] ;;
+    *) return 0 ;;
+  esac
+}
+
+# Install the core hook scripts that core_hook_wanted accepts.
+install_core_hooks() { # <src_dir> <dest_rel_dir>
+  local f name
+  for f in "$1"/*.sh; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f" .sh)
+    core_hook_wanted "$name" && install_file "$f" "$2/$name.sh"
+  done
   return 0
 }
 
@@ -629,12 +644,7 @@ install_dir() {
   # so that LOCK_FILES modifications persist
   while IFS= read -r src_path; do
     local rel="${src_path#"$src_dir"/}"
-    # A skip (locally modified, install_file returns 1) is an expected
-    # outcome, not an error. Without `|| true`, a skipped file that sorts
-    # last in the directory becomes the loop's — and install_dir's — exit
-    # status, and `set -e` aborts the whole update before save_lock runs,
-    # freezing every file written in that run as "locally modified".
-    install_file "$src_path" "$dest_rel_dir/$rel" || true
+    install_file "$src_path" "$dest_rel_dir/$rel"
   done < <(
     if [ -n "$exclude_name" ]; then
       find "$src_dir" -type f ! -name "$exclude_name" | sort

@@ -1,6 +1,6 @@
 ## Feature Worktree Workflow (MANDATORY — NONNEGOTIABLE)
 
-When starting ANY new feature work — whether via `trc.specify`, a new implementation
+When starting ANY new feature work — whether via `/trc.implement`, a new implementation
 task, or any work that requires a new branch — ALWAYS create a git worktree first.
 The ONLY exception is if the user explicitly says to work on the current branch.
 

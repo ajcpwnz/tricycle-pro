@@ -12,10 +12,6 @@ json_kv() {
   printf '"%s": "%s"' "$1" "$(json_escape "$2")"
 }
 
-json_kv_bool() {
-  printf '"%s": %s' "$1" "$2"
-}
-
 json_kv_raw() {
   printf '"%s": %s' "$1" "$2"
 }

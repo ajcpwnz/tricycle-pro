@@ -6,21 +6,14 @@ Routes audit findings to Linear as issues.
 
 This skill ships with Tricycle Pro. Install via `tricycle update`.
 
-## Configuration
+## Usage
 
-Add to your `tricycle.config.yml`:
-
-```yaml
-workflow:
-  blocks:
-    audit:
-      skills:
-        - linear-audit
-```
+Run `/trc.audit --linear`. The audit invokes this skill with the report it just
+wrote. You can also run `/linear-audit` by hand after an audit.
 
 ## Requirements
 
-- **Linear MCP server** configured in `.mcp.json`
+- **A Linear MCP server** connected, under any server name
 - Audit reports in `docs/audits/` (produced by `/trc.audit`)
 
 ## What it does

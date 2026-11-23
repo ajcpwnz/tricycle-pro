@@ -7,7 +7,7 @@ Seeds Claude Code's memory with universal best-practice feedback memories.
 - **MEMORY.md.tpl** -- Template for the memory index file
 - **seeds/** -- Pre-written memory files:
   - `lint-test-before-done.md` -- Always run lint and test before declaring work done
-  - `no-manual-migrations.md` -- Never create migration files manually; use wrapper scripts
+  - `no-manual-migrations.md` -- Never create migration files manually. Use wrapper scripts
   - `pr-conventions.md` -- PR target branch and merge strategy conventions
   - `push-gating.md` -- Never push without explicit user approval
   - `worktree-workflow.md` -- Always use worktrees for feature branches
@@ -15,7 +15,7 @@ Seeds Claude Code's memory with universal best-practice feedback memories.
 ## Installation
 
 ```bash
-npx tricycle-pro add memory
+tricycle add memory
 ```
 
 This copies seed files to `.claude/memory/seeds/` where Claude Code discovers and uses them

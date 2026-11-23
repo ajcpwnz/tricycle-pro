@@ -7,22 +7,20 @@ node_modules/
 
 # Dogfood: installed copies live here but source-of-truth is core/ and modules/
 # Ignore everything tricycle init installs so it doesn't duplicate source files in git
-# (.claude/ is handled by the whitelist block below — keep settings/commands/hooks/skills)
+# (.claude/ is handled by the whitelist block below)
 .trc/
 .mcp.json
 
 # Keep tricycle.config.yml tracked (it's the dogfood config for this repo)
 # Keep specs/ tracked (feature specs created during dogfooding)
 
-# Claude Code — keep settings.json, commands, hooks, skills committed
+# Claude Code — keep settings.json, commands, hooks, skills and agents committed
 .claude/*
 !.claude/settings.json
 !.claude/commands/
 !.claude/hooks/
 !.claude/skills/
-
-# Tricycle Pro lock
-.tricycle.lock
+!.claude/agents/
 
 # Runtime chain-run state (from /trc.chain)
 specs/.chain-runs/

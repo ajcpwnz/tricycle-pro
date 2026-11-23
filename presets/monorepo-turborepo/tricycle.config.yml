@@ -23,9 +23,6 @@ apps:
       port: 5433
       user: myuser
       default_db: mydb
-    migration:
-      tool: prisma
-      script: ./scripts/migrate-dev.sh
   - name: frontend
     path: apps/frontend
     type: web
@@ -36,8 +33,6 @@ apps:
 
 worktree:
   enabled: true
-  path_pattern: "../{project}-{branch}"
-  db_isolation: true
   env_copy:
     - apps/backend/.env
     - apps/frontend/.env
@@ -55,7 +50,6 @@ qa:
   primary_tool: "chrome-devtools"
   fallback_tool: "playwright"
   results_dir: "qa/results-{date}"
-  issue_tracker: "github"
 
 # /trc.band epic orchestration: max concurrent sub-issue workers (1-8)
 band:
@@ -69,14 +63,6 @@ push:
   auto_merge: true
   merge_strategy: "squash"
 
-deploy:
-  enabled: true
-  workflows:
-    - name: "Deploy Backend"
-      paths: ["apps/backend/**", "bun.lock"]
-    - name: "Deploy Frontend"
-      paths: ["apps/frontend/**", "packages/**", "bun.lock"]
-
 branching:
   style: feature-name
 
@@ -86,11 +72,15 @@ stealth:
 
 constitution:
   root: ".trc/memory/constitution.md"
-  per_app: true
-  hierarchy: "app-overrides-root"
 
 context:
   session_start:
     constitution: true
     # files:
     #   - "docs/architecture.md"
+
+# Each style part acts only when its plugin is installed: caveman for chat,
+# asd-ste100 for the lint gate on persisted prose.
+style:
+  chat: ultracave
+  artifacts: ste-short

@@ -11,21 +11,12 @@ description: >
 
 ## When to use this Skill
 
-This skill is invoked automatically by the `/trc.audit` command when configured on the audit step:
-
-```yaml
-workflow:
-  blocks:
-    audit:
-      skills:
-        - linear-audit
-```
-
-You can also invoke it manually via `/linear-audit` after running an audit.
+`/trc.audit --linear` invokes this skill after it writes the report. You can also
+invoke it by hand with `/linear-audit` after an audit.
 
 ## Prerequisites
 
-- **Linear MCP server** must be configured and running. Check `.mcp.json` for a `linear-server` entry.
+- **A Linear MCP server** must be connected, under any server name.
 - **An audit report** must exist in `docs/audits/`. This skill reads the most recent report.
 - **Linear team** must be configured. Check project memory or config for the team name/ID.
 
@@ -33,14 +24,14 @@ You can also invoke it manually via `/linear-audit` after running an audit.
 
 ### 1. Check Linear MCP Availability
 
-Verify that Linear MCP tools are available by checking if `mcp__linear-server__save_issue` is callable.
+Check that a Linear `save_issue` tool is available (`mcp__<server>__save_issue`, for any server name).
 
 - If available: proceed.
 - If NOT available: output "Linear MCP not available — audit findings remain in docs/audits/ only." and STOP. Do not error — this is expected graceful degradation.
 
 ### 2. Find the Most Recent Audit Report
 
-Look for the newest file in `docs/audits/` matching the pattern `audit-*.md`. Read its contents.
+If the caller passed a report path, read that file. Otherwise read the newest file in `docs/audits/` that matches `audit-*.md`.
 
 - If no audit report exists: output "No audit report found in docs/audits/. Run `/trc.audit` first." and STOP.
 
@@ -60,7 +51,7 @@ Skip **info** severity findings — they are observations, not actionable issues
 Read the project's Linear team configuration. Check in order:
 1. Project memory files for a Linear team reference
 2. `tricycle.config.yml` for a `linear.team` field
-3. If neither found: list available teams via Linear MCP and ask the user to confirm which team to use
+3. If neither found: list available teams via Linear MCP and ask the user which team to use
 
 ### 5. Create Linear Issues
 

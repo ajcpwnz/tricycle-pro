@@ -43,10 +43,15 @@ stealth:
 
 constitution:
   root: ".trc/memory/constitution.md"
-  per_app: false
 
 context:
   session_start:
     constitution: true
     # files:
     #   - "docs/architecture.md"
+
+# Each style part acts only when its plugin is installed: caveman for chat,
+# asd-ste100 for the lint gate on persisted prose.
+style:
+  chat: ultracave
+  artifacts: ste-short

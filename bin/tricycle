@@ -40,6 +40,7 @@ TRICYCLE_MANAGED_PATHS=(
   "core/scripts/bash:.trc/scripts/bash"
   "core/hooks:.claude/hooks"
   "core/blocks:.trc/blocks"
+  "core/agents:.claude/agents"
 )
 
 PRESET=""
@@ -47,9 +48,7 @@ DRY_RUN=0
 HELP=0
 SHOW_VERSION=0
 STATUS_JSON=0
-STATUS_ALL=0
 DOGFOOD_YES=0
-FORCE=0
 POSITIONALS=()
 
 while [ $# -gt 0 ]; do
@@ -60,9 +59,7 @@ while [ $# -gt 0 ]; do
       ;;
     --dry-run) DRY_RUN=1; shift ;;
     --json) STATUS_JSON=1; shift ;;
-    --all)  STATUS_ALL=1; shift ;;
     -y|--yes) DOGFOOD_YES=1; shift ;;
-    --force) FORCE=1; shift ;;
     -h|--help) HELP=1; shift ;;
     -v|--version) SHOW_VERSION=1; shift ;;
     # `tricycle graphify …` has its own subcommand parser; stop consuming
@@ -95,15 +92,14 @@ Usage:
   tricycle init [--preset <name>]     Initialize project with Tricycle Pro
   tricycle add <module>               Add optional module (worktree, qa, ci-watch, mcp, memory)
   tricycle generate <target>          Generate files (claude-md, settings, gitignore, mcp)
-  tricycle update [--dry-run] [--force]  Update core files; --force overwrites locally-modified files
+  tricycle update [--dry-run]  Overwrite core files, remove dropped ones, re-assemble commands
   tricycle update-self                Update the tricycle CLI itself
   tricycle dogfood [--yes]            Mirror this repo's core/ into .trc/ and .claude/ (contributor-only)
   tricycle assemble [--dry-run]        Assemble commands from blocks based on workflow config
   tricycle skills list                 List installed skills with source and status
-  tricycle status [<filter>] [--json] [--all]  Show workflow progress (default: active worktrees only)
+  tricycle status [<spec id>] [--json]  Show spec status and checklist progress
   tricycle validate                   Validate configuration and installed files
   tricycle graphify <sub>              Manage graphify integration (status|install|bootstrap|refresh|mcp-start|mcp-stop)
-  tricycle hello-world                Print "Hello, world!"
 
 Options:
   --preset <name>     Use a preset configuration (monorepo-turborepo, nextjs-prisma, single-app)
@@ -173,9 +169,6 @@ cmd_init() {
     pm="${pms[$pm_idx]}"
     base_branch=$(prompt "Base branch (PR target)" "staging")
 
-    local per_app="false"
-    [ "$type" = "monorepo" ] && per_app="true"
-
     cat > "$CWD/tricycle.config.yml" << YAML
 project:
   name: $name
@@ -185,8 +178,6 @@ project:
 apps: []
 worktree:
   enabled: true
-  path_pattern: "../{project}-{branch}"
-  db_isolation: false
   env_copy: []
 mcp:
   preset: minimal
@@ -204,8 +195,6 @@ stealth:
   ignore_target: exclude
 constitution:
   root: .trc/memory/constitution.md
-  per_app: $per_app
-  hierarchy: app-overrides-root
 YAML
     echo ""
     info "WRITE tricycle.config.yml"
@@ -229,9 +218,10 @@ YAML
   install_dir "$TOOLKIT_ROOT/core/commands" ".claude/commands"
   install_dir "$TOOLKIT_ROOT/core/templates" ".trc/templates"
   install_dir "$TOOLKIT_ROOT/core/scripts/bash" ".trc/scripts/bash"
-  install_dir "$TOOLKIT_ROOT/core/hooks" ".claude/hooks"
+  install_core_hooks "$TOOLKIT_ROOT/core/hooks" ".claude/hooks"
   install_skills "$TOOLKIT_ROOT/core/skills" ".claude/skills"
   install_dir "$TOOLKIT_ROOT/core/blocks" ".trc/blocks"
+  install_dir "$TOOLKIT_ROOT/core/agents" ".claude/agents"
 
   # Install external skills from config
   local ext_count
@@ -270,6 +260,9 @@ YAML
   echo "   2. Run \`tricycle generate claude-md\` to generate CLAUDE.md"
   echo "   3. Run \`/trc.constitution\` in Claude Code to define project principles"
   echo "   4. Run \`tricycle add <module>\` to enable worktree, qa, ci-watch, mcp, or memory"
+  echo "   5. Optional: install the plugins that the style config uses. Without them, nothing changes."
+  echo "        claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman"
+  echo "        claude plugin marketplace add danyuchn/asd-ste100-skill && claude plugin install asd-ste100@asd-ste100-skill"
   echo ""
 }
 
@@ -379,9 +372,6 @@ cmd_generate_claude_md() {
     sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/lint-test.md.tpl")"
   fi
 
-  # push-gating, feature-branch-pr, and artifact-cleanup are now handled by the
-  # push-deploy implement block — no longer emitted into CLAUDE.md
-
   if [ "$(cfg_get "worktree.enabled")" = "true" ]; then
     sections="${sections}"$'\n\n---\n\n'"$(render_section "$sections_dir/worktree-workflow.md.tpl")"
   fi
@@ -406,6 +396,33 @@ render_section() {
   render_template "$tpl_path"
 }
 
+# hooks_rows_to_json <row>... — rows are event\x1f matcher\x1f command\x1f timeout.
+# Groups by event in first-seen order; consecutive rows with the same matcher
+# share one entry. Prints the body of the settings.json "hooks" object.
+hooks_rows_to_json() {
+  local US=$'\x1f' events="" r e m c t ev out="" entries inner cur first
+  esc() { local v=${1//\\/\\\\}; printf '%s' "${v//\"/\\\"}"; }
+  entry() { # <matcher> <inner>
+    if [ -n "$1" ]; then printf '\n      {\n        "matcher": "%s",\n        "hooks": [%s\n        ]\n      }' "$(esc "$1")" "$2"
+    else printf '\n      {\n        "hooks": [%s\n        ]\n      }' "$2"; fi
+  }
+  for r in "$@"; do e=${r%%"$US"*}; case " $events " in *" $e "*) ;; *) events="$events $e" ;; esac; done
+  for ev in $events; do
+    entries=""; inner=""; cur=""; first=1
+    for r in "$@"; do
+      IFS="$US" read -r e m c t <<< "$r"
+      [ "$e" = "$ev" ] || continue
+      h=$(printf '\n          {"type": "command", "command": "%s"%s}' "$(esc "$c")" "${t:+, \"timeout\": $t}")
+      if [ "$first" = 1 ]; then cur=$m; inner=$h; first=0
+      elif [ "$m" = "$cur" ]; then inner="$inner,$h"
+      else entries="$entries$(entry "$cur" "$inner"),"; cur=$m; inner=$h; fi
+    done
+    entries="$entries$(entry "$cur" "$inner")"
+    out="$out${out:+,}"$'\n'"    \"$ev\": [$entries"$'\n'"    ]"
+  done
+  printf '%s' "$out"
+}
+
 cmd_generate_settings() {
   local perms=()
   perms+=("Edit" "Write")
@@ -428,48 +445,50 @@ cmd_generate_settings() {
     perms+=("Bash(turbo:*)")
   fi
 
+  local pi=0 pn
+  pn=$(cfg_count "claude.permissions.allow")
+  while [ "$pi" -lt "$pn" ]; do
+    perms+=("$(cfg_get_or "claude.permissions.allow.$pi" "")")
+    pi=$((pi + 1))
+  done
+
   # Build permissions JSON array
   local perms_json
   perms_json=$(json_str_array "${perms[@]}")
 
-  # Build hooks JSON
-  local pre_hooks="" post_hooks=""
+  # Hooks. Each row is event, matcher, command, timeout joined by \x1f. trc core
+  # hooks come first; `claude.disable_core_hooks` names core hooks (script name
+  # without .sh) to leave out. Repo hooks come from `claude.hooks`.
+  local US=$'\x1f' HP='$CLAUDE_PROJECT_DIR/.claude/hooks' rows=()
+  core_hook() { # <name> <event> <matcher> <timeout>
+    core_hook_wanted "$1" || return 0
+    rows+=("$2$US$3$US$HP/$1.sh$US$4")
+  }
 
-  # worktree guard hooks (only when worktree enabled)
-  if [ "$(cfg_get "worktree.enabled")" = "true" ]; then
-    pre_hooks='
-      {
-        "matcher": "Write|Edit",
-        "hooks": [{"type": "command", "command": ".claude/hooks/block-spec-in-main.sh", "timeout": 5}]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [{"type": "command", "command": ".claude/hooks/block-branch-in-main.sh", "timeout": 5}]
-      }'
-  fi
+  core_hook guard-main-checkout PreToolUse "Bash" 5
+  # rename runs before graphify so the session label is set first; graphify
+  # is a silent no-op unless integrations.graphify.enabled is true.
+  core_hook rename-on-kickoff UserPromptSubmit "" 5
+  core_hook graphify-refresh-on-kickoff UserPromptSubmit "" 5
 
-  # post-implement-lint (always)
-  post_hooks='
-      {
-        "matcher": "Skill",
-        "hooks": [{"type": "command", "command": ".claude/hooks/post-implement-lint.sh", "timeout": 5}]
-      }'
-
-  # UserPromptSubmit: rename-on-kickoff (TRI-31) + optional graphify refresh.
-  # Rename runs first so the session label is set before any other pre-turn
-  # side effect. Graphify runs second; it's gated behind
-  # `integrations.graphify.enabled` in tricycle.config.yml and is a silent
-  # no-op when the flag is off.
-  local prompt_hooks='
-      {
-        "hooks": [
-          {"type": "command", "command": ".claude/hooks/rename-on-kickoff.sh", "timeout": 5},
-          {"type": "command", "command": ".claude/hooks/graphify-refresh-on-kickoff.sh", "timeout": 5}
-        ]
-      }'
+  # style.artifacts: ste-short gates persisted prose through the asd-ste100
+  # linter (the hook fails open when the plugin is absent). style.chat sets the
+  # caveman plugin's default mode for this repo through .caveman.json, a file
+  # that nothing reads unless caveman is installed.
+  core_hook style-gate PreToolUse "Write|Edit|MultiEdit|Bash|mcp__.*__(save|create)_(issue|comment)" 30
+  local chat_mode
+  chat_mode=$(cfg_get_or "style.chat" "")
+  case "$chat_mode" in
+    "") ;;
+    caveman|ultracave|megacave|off)
+      printf '{\n  "defaultMode": "%s"\n}\n' "$chat_mode" > "$CWD/.caveman.json.tmp.$$"
+      mv -f "$CWD/.caveman.json.tmp.$$" "$CWD/.caveman.json"
+      info "WRITE .caveman.json"
+      ;;
+    *) error "style.chat must be one of: caveman, ultracave, megacave, off (got '$chat_mode')"; exit 1 ;;
+  esac
 
   # SessionStart: session-context (constitution + extra files)
-  local session_hooks=""
   local inject_constitution
   inject_constitution=$(cfg_get_or "context.session_start.constitution" "true")
 
@@ -509,13 +528,22 @@ cmd_generate_settings() {
     printf '# Auto-generated by tricycle generate settings\n%s%s\n' "$max_chars_line" "$conf_lines" > "$CWD/.claude/hooks/.session-context.conf"
     info "WRITE .claude/hooks/.session-context.conf"
 
-    session_hooks=',
-    "SessionStart": [
-      {
-        "hooks": [{"type": "command", "command": ".claude/hooks/session-context.sh", "timeout": 10}]
-      }
-    ]'
+    core_hook session-context SessionStart "" 10
   fi
+
+
+  local hi=0 hn ev mt cm to
+  hn=$(cfg_count "claude.hooks")
+  while [ "$hi" -lt "$hn" ]; do
+    ev=$(cfg_get_or "claude.hooks.$hi.event" ""); mt=$(cfg_get_or "claude.hooks.$hi.matcher" "")
+    cm=$(cfg_get_or "claude.hooks.$hi.command" ""); to=$(cfg_get_or "claude.hooks.$hi.timeout" "")
+    case "$to" in *[!0-9]*) to="" ;; esac
+    [ -n "$ev" ] && [ -n "$cm" ] && rows+=("$ev$US$mt$US$cm$US$to")
+    hi=$((hi + 1))
+  done
+
+  local hooks_json
+  hooks_json=$(hooks_rows_to_json "${rows[@]+"${rows[@]}"}")
 
   local settings_json
   settings_json=$(cat << ENDJSON
@@ -523,20 +551,16 @@ cmd_generate_settings() {
   "permissions": {
     "allow": ${perms_json}
   },
-  "hooks": {
-    "PreToolUse": [${pre_hooks}
-    ],
-    "PostToolUse": [${post_hooks}
-    ],
-    "UserPromptSubmit": [${prompt_hooks}
-    ]${session_hooks}
+  "hooks": {${hooks_json}
   }
 }
 ENDJSON
 )
 
   mkdir -p "$CWD/.claude"
-  printf '%s\n' "$settings_json" > "$CWD/.claude/settings.json"
+  # Write then rename: a running session never reads a half-written file.
+  printf '%s\n' "$settings_json" > "$CWD/.claude/settings.json.tmp.$$"
+  mv -f "$CWD/.claude/settings.json.tmp.$$" "$CWD/.claude/settings.json"
   info "WRITE .claude/settings.json"
 }
 
@@ -556,16 +580,24 @@ stealth_remove_block() {
 # the whitelist is present in the committed .gitignore.
 ensure_claude_gitignore() {
   local gitignore_path="$1"
-  [ -f "$gitignore_path" ] && grep -q '\.claude/\*' "$gitignore_path" && return 0
+  if [ -f "$gitignore_path" ] && grep -q '\.claude/\*' "$gitignore_path"; then
+    # Older blocks predate .claude/agents/. Add the rule so agents get committed.
+    if ! grep -qx '!\.claude/agents/' "$gitignore_path"; then
+      printf '!.claude/agents/\n' >> "$gitignore_path"
+      info "UPDATE .gitignore (.claude/agents committed)"
+    fi
+    return 0
+  fi
   local block
   block=$(cat << 'CLAUDE'
 
-# Claude Code — keep settings.json, commands, hooks, skills committed
+# Claude Code — keep settings.json, commands, hooks, skills and agents committed
 .claude/*
 !.claude/settings.json
 !.claude/commands/
 !.claude/hooks/
 !.claude/skills/
+!.claude/agents/
 CLAUDE
 )
   printf '%s\n' "$block" >> "$gitignore_path"
@@ -641,12 +673,13 @@ STEALTH
     local block
     block=$(cat << 'BLOCK'
 
-# Claude Code — keep settings.json, commands, hooks, skills committed
+# Claude Code — keep settings.json, commands, hooks, skills and agents committed
 .claude/*
 !.claude/settings.json
 !.claude/commands/
 !.claude/hooks/
 !.claude/skills/
+!.claude/agents/
 
 # Tricycle Pro lock
 .tricycle.lock
@@ -661,10 +694,23 @@ BLOCK
       if ! grep -q '\.claude/\*' "$gitignore_path"; then
         printf '%s\n' "$block" >> "$gitignore_path"
         info "UPDATE .gitignore (appended .claude rules)"
+      elif ! grep -qx '!\.claude/agents/' "$gitignore_path"; then
+        # Older blocks predate .claude/agents/. Add the rule so agents get committed.
+        printf '!.claude/agents/\n' >> "$gitignore_path"
+        info "UPDATE .gitignore (.claude/agents committed)"
       fi
     else
       printf '%s\n' "$block" > "$gitignore_path"
       info "WRITE .gitignore"
+    fi
+    # Chain and band run state is runtime only. Older blocks predate the rules.
+    local rule missing=""
+    for rule in 'specs/.chain-runs/' 'specs/.band-runs/'; do
+      grep -qxF "$rule" "$gitignore_path" || missing="$missing$rule"$'\n'
+    done
+    if [ -n "$missing" ]; then
+      printf '\n# Chain and band run state (runtime only)\n%s' "$missing" >> "$gitignore_path"
+      info "UPDATE .gitignore (chain and band run state ignored)"
     fi
   fi
 }
@@ -779,7 +825,7 @@ cmd_update() {
     echo ""
   fi
 
-  local updated=0 skipped=0 added=0 adopted=0
+  local updated=0 added=0 adopted=0 removed=0
 
   local src_rel dest_rel
   for mapping in "${TRICYCLE_MANAGED_PATHS[@]}"; do
@@ -792,76 +838,52 @@ cmd_update() {
       local entry="${src_path#"$src_dir"/}"
       local dest_rel_path="$dest_rel/$entry"
       local dest_path="$CWD/$dest_rel_path"
+      if [ "$src_rel" = "core/hooks" ] && ! core_hook_wanted "${entry%.sh}"; then
+        if lock_has "$dest_rel_path"; then
+          if [ $DRY_RUN -eq 1 ]; then info "REMOVE $dest_rel_path"; else rm -f "$dest_path"; lock_remove "$dest_rel_path"; info "REMOVE $dest_rel_path"; fi
+          removed=$((removed + 1))
+        fi
+        continue
+      fi
       local new_content new_checksum
       new_content=$(cat "$src_path")
       new_checksum=$(sha256_str "$new_content")
 
+      # The assembler writes trc.plan.md and trc.implement.md from blocks and
+      # config after this loop. A copy of core's assembly is not written first.
+      case "$dest_rel_path" in
+        .claude/commands/trc.plan.md|.claude/commands/trc.implement.md)
+          if [ -f "$dest_path" ]; then lock_has "$dest_rel_path" || lock_set "$dest_rel_path" "$new_checksum"; continue; fi ;;
+      esac
+
       if [ ! -f "$dest_path" ]; then
-        # File missing locally — new managed file from core.
-        if [ $DRY_RUN -eq 1 ]; then
-          info "ADD $dest_rel_path"
-        else
-          install_file "$src_path" "$dest_rel_path"
-        fi
+        if [ $DRY_RUN -eq 1 ]; then info "ADD $dest_rel_path"; else install_file "$src_path" "$dest_rel_path"; fi
         added=$((added + 1))
-      elif lock_has "$dest_rel_path"; then
-        local current_checksum stored_checksum
-        current_checksum=$(sha256_str "$(cat "$dest_path")")
-        stored_checksum=$(lock_get_checksum "$dest_rel_path")
-        if [ "$current_checksum" != "$stored_checksum" ]; then
-          if [ $FORCE -eq 1 ]; then
-            if [ $DRY_RUN -eq 1 ]; then
-              info "FORCE-UPDATE $dest_rel_path (locally modified, will be overwritten)"
-            else
-              install_file "$src_path" "$dest_rel_path"
-            fi
-            updated=$((updated + 1))
-          else
-            info "SKIP $dest_rel_path (locally modified — re-run with --force to overwrite)"
-            skipped=$((skipped + 1))
-          fi
-        elif [ "$new_checksum" != "$stored_checksum" ]; then
-          if [ $DRY_RUN -eq 1 ]; then
-            info "UPDATE $dest_rel_path"
-          else
-            install_file "$src_path" "$dest_rel_path"
-          fi
-          updated=$((updated + 1))
-        fi
-      else
-        # File exists in consumer but not tracked in lock (e.g. manually
-        # copied, or added to core/ after a prior init). Adopt it.
-        local current_checksum
-        current_checksum=$(sha256_str "$(cat "$dest_path")")
-        if [ "$current_checksum" = "$new_checksum" ]; then
-          # Byte-identical to source — adopt silently into the lock.
-          if [ $DRY_RUN -eq 1 ]; then
-            info "ADOPT $dest_rel_path (matches core, adding to lock)"
-          else
-            lock_set "$dest_rel_path" "$new_checksum" "false"
-          fi
-          adopted=$((adopted + 1))
-        elif [ $FORCE -eq 1 ]; then
-          # Unmanaged + locally modified, but --force: overwrite and adopt.
-          if [ $DRY_RUN -eq 1 ]; then
-            info "FORCE-ADOPT $dest_rel_path (unmanaged + locally modified, will be overwritten)"
-          else
-            install_file "$src_path" "$dest_rel_path"
-          fi
-          updated=$((updated + 1))
-        else
-          # Differs from source — treat as user-modified. Record it in the
-          # lock as customized so a subsequent update explains itself, but
-          # do NOT overwrite the user's file.
-          info "SKIP $dest_rel_path (unmanaged, locally modified — re-run with --force to overwrite, or use \`tricycle generate\` / delete the file to accept upstream)"
-          if [ $DRY_RUN -eq 0 ]; then
-            lock_set "$dest_rel_path" "$current_checksum" "true"
-          fi
-          skipped=$((skipped + 1))
-        fi
+      elif ! cmp -s "$src_path" "$dest_path"; then
+        # Core copies are outputs: a local edit is overwritten. Repo-specific
+        # changes belong in custom blocks and tricycle.config.yml.
+        if [ $DRY_RUN -eq 1 ]; then info "UPDATE $dest_rel_path"; else install_file "$src_path" "$dest_rel_path"; fi
+        updated=$((updated + 1))
+      elif ! lock_has "$dest_rel_path"; then
+        if [ $DRY_RUN -eq 1 ]; then info "ADOPT $dest_rel_path"; else lock_set "$dest_rel_path" "$new_checksum"; fi
+        adopted=$((adopted + 1))
       fi
     done < <(find "$src_dir" -type f | sort)
   done
+
+  # Managed files whose core source no longer exists are removed.
+  local lpath ldest lsrc
+  while IFS=$'\t' read -r lpath _; do
+    [ -n "$lpath" ] || continue
+    lsrc=""
+    for mapping in "${TRICYCLE_MANAGED_PATHS[@]}"; do
+      ldest="${mapping#*:}"
+      case "$lpath" in "$ldest"/*) lsrc="$TOOLKIT_ROOT/${mapping%%:*}/${lpath#"$ldest"/}" ;; esac
+    done
+    [ -n "$lsrc" ] && [ ! -f "$lsrc" ] || continue
+    if [ $DRY_RUN -eq 1 ]; then info "REMOVE $lpath"; else rm -f "$CWD/$lpath"; lock_remove "$lpath"; info "REMOVE $lpath"; fi
+    removed=$((removed + 1))
+  done <<< "$LOCK_FILES"
 
   # Update vendored skills (with disable filtering)
   if [ $DRY_RUN -eq 0 ]; then
@@ -884,31 +906,23 @@ cmd_update() {
         local skill_name
         skill_name=$(basename "${src#*:}" | tr '/' '\n' | tail -1)
         local dest_skill="$CWD/.claude/skills/$skill_name"
-        # Skip if installed and user-modified
-        if [ -d "$dest_skill" ] && [ -f "$dest_skill/SOURCE" ]; then
-          local stored_cs current_cs
-          stored_cs=$(source_get "$dest_skill/SOURCE" "checksum")
-          current_cs=$(skill_checksum "$dest_skill")
-          if [ -n "$stored_cs" ] && [ "$stored_cs" != "$current_cs" ]; then
-            info "SKIP .claude/skills/$skill_name (locally modified)"
-            skipped=$((skipped + 1))
-          else
-            fetch_external_skill "$src" ".claude/skills" || info "ERROR $src — fetch failed (continuing)"
-          fi
-        else
-          fetch_external_skill "$src" ".claude/skills" || info "ERROR $src — fetch failed (continuing)"
-        fi
+        fetch_external_skill "$src" ".claude/skills" || info "ERROR $src — fetch failed (continuing)"
       fi
       ei=$((ei + 1))
     done
   fi
 
-  [ $DRY_RUN -eq 0 ] && save_lock
+  if [ $DRY_RUN -eq 0 ]; then
+    save_lock
+    # .claude/commands/trc.*.md are assembly output: rebuild them from blocks.
+    echo ""
+    cmd_assemble
+  fi
 
   local prefix=""
   [ $DRY_RUN -eq 1 ] && prefix="Would: "
   echo ""
-  echo "${prefix}${updated} updated, ${added} added, ${adopted} adopted, ${skipped} skipped (locally modified)"
+  echo "${prefix}${updated} updated, ${added} added, ${adopted} adopted, ${removed} removed"
   echo ""
 }
 
@@ -1073,7 +1087,8 @@ cmd_validate() {
 
 cmd_status() {
   local filter="${POSITIONALS[1]:-}"
-  status_scan "$filter" "$STATUS_JSON" "$STATUS_ALL"
+  load_config
+  status_scan "$filter" "$STATUS_JSON"
 }
 
 cmd_update_self() {
@@ -1266,14 +1281,14 @@ cmd_dogfood() {
         mkdir -p "$(dirname "$dest_path")"
         cp -f "$src_path" "$dest_path"
         case "$src_path" in *.sh) chmod +x "$dest_path" ;; esac
-        lock_set "$dest_rel_path" "$src_cs" "false"
+        lock_set "$dest_rel_path" "$src_cs"
         created=$((created + 1))
       else
         dst_cs=$(sha256_file "$dest_path")
         if [ "$src_cs" != "$dst_cs" ]; then
           cp -f "$src_path" "$dest_path"
           case "$src_path" in *.sh) chmod +x "$dest_path" ;; esac
-          lock_set "$dest_rel_path" "$src_cs" "false"
+          lock_set "$dest_rel_path" "$src_cs"
           written=$((written + 1))
         fi
       fi
@@ -1287,9 +1302,6 @@ cmd_dogfood() {
 
 # ─── Hello World ─────────────────────────────────────────────────────────────
 
-cmd_hello_world() {
-  echo "Hello, world!"
-}
 
 # ─── tricycle graphify <subcommand> ──────────────────────────────────────────
 # Thin wrapper around the `graphify` skill/CLI. Centralizes install detection,
@@ -1415,7 +1427,7 @@ _graphify_refresh() {
     if [ "${TRC_GRAPHIFY_AUTO_BOOTSTRAP:-false}" = "true" ]; then
       # First-time bootstrap. `graphify update .` handles the empty-graph
       # case by building fresh (AST pass only). Spawn in background so the
-      # hook returns fast; the chain/specify workflow will see the graph on
+      # hook returns fast; the plan and implement commands see the graph on
       # the next kickoff.
       nohup bash -c "$GRAPHIFY_CMD update ." \
         >"$CWD/graphify-out/.refresh.log" 2>&1 &
@@ -1581,7 +1593,6 @@ case "$COMMAND" in
   dogfood)     cmd_dogfood ;;
   validate)    cmd_validate ;;
   graphify)    cmd_graphify ;;
-  hello-world) cmd_hello_world ;;
   *)
     error "Unknown command: $COMMAND. Run \"tricycle --help\" for usage."
     exit 1

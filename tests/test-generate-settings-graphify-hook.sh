@@ -36,10 +36,10 @@ assert isinstance(ups, list) and ups, "UserPromptSubmit array missing or empty"
 first = ups[0]
 inner = first.get("hooks") or []
 cmds = [h.get("command", "") for h in inner]
-assert ".claude/hooks/rename-on-kickoff.sh" in cmds, f"rename hook missing; got {cmds}"
-assert ".claude/hooks/graphify-refresh-on-kickoff.sh" in cmds, f"graphify hook missing; got {cmds}"
+assert "$CLAUDE_PROJECT_DIR/.claude/hooks/rename-on-kickoff.sh" in cmds, f"rename hook missing; got {cmds}"
+assert "$CLAUDE_PROJECT_DIR/.claude/hooks/graphify-refresh-on-kickoff.sh" in cmds, f"graphify hook missing; got {cmds}"
 # Rename must come first so the session label is set before graphify fires.
-assert cmds.index(".claude/hooks/rename-on-kickoff.sh") < cmds.index(".claude/hooks/graphify-refresh-on-kickoff.sh"), \
+assert cmds.index("$CLAUDE_PROJECT_DIR/.claude/hooks/rename-on-kickoff.sh") < cmds.index("$CLAUDE_PROJECT_DIR/.claude/hooks/graphify-refresh-on-kickoff.sh"), \
     f"rename hook must come before graphify; got {cmds}"
 PY
 

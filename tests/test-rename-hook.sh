@@ -54,22 +54,22 @@ write_config issue-number TRI
 out=$(run_hook "how do I fix this bug?")
 assert_eq "non-kickoff" "$out" ""
 
-# ── Case 2: /trc.specify with explicit issue in description ──────────────
-out=$(run_hook "/trc.specify TRI-200 Add dark mode toggle")
+# ── Case 2: /trc.plan with explicit issue in description ──────────────
+out=$(run_hook "/trc.plan TRI-200 Add dark mode toggle")
 assert_eq "specify issue-number explicit" "$(title_of "$out")" "TRI-200-dark-mode-toggle"
 
-# ── Case 3: /trc.specify issue-number without ticket → empty stdout ──────
-out=$(run_hook "/trc.specify Some feature without a ticket id")
+# ── Case 3: /trc.plan issue-number without ticket → empty stdout ──────
+out=$(run_hook "/trc.plan Some feature without a ticket id")
 assert_eq "specify issue-number no id" "$out" ""
 
-# ── Case 4: /trc.specify feature-name style ──────────────────────────────
+# ── Case 4: /trc.plan feature-name style ──────────────────────────────
 write_config feature-name ""
-out=$(run_hook "/trc.specify Add notifications")
+out=$(run_hook "/trc.plan Add notifications")
 assert_eq "specify feature-name" "$(title_of "$out")" "notifications"
 
-# ── Case 5: /trc.headless follows the same branch ────────────────────────
-out=$(run_hook "/trc.headless Improve onboarding flow")
-assert_eq "headless feature-name" "$(title_of "$out")" "improve-onboarding-flow"
+# ── Case 5: /trc.implement follows the same branch ───────────────────────
+out=$(run_hook "/trc.implement Improve onboarding flow")
+assert_eq "implement feature-name" "$(title_of "$out")" "improve-onboarding-flow"
 
 # ── Case 6: /trc.chain range ─────────────────────────────────────────────
 out=$(run_hook "/trc.chain TRI-300..TRI-302")
@@ -126,7 +126,7 @@ assert_eq "empty prompt" "$out" ""
 write_config issue-number TRI
 start=$(python3 -c 'import time; print(int(time.time()*1000))')
 for _ in 1 2 3 4 5; do
-    run_hook "/trc.specify TRI-999 Test speed" >/dev/null
+    run_hook "/trc.plan TRI-999 Test speed" >/dev/null
 done
 end=$(python3 -c 'import time; print(int(time.time()*1000))')
 elapsed=$((end - start))

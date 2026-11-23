@@ -9,13 +9,13 @@ order: 55
 
 ## QA Testing Gate
 
-**MANDATORY — NONNEGOTIABLE.** Before proceeding to push-deploy, you MUST complete all testing steps below. If any test fails after retry attempts, HALT. Do NOT proceed to the next block.
+**MANDATORY — NONNEGOTIABLE.** Before proceeding to push-deploy, you MUST complete all testing steps below. If a test fails and you cannot repair it, do NOT proceed to the next block.
 
 ### 1. Read QA instructions (if available)
 
 Check if `qa/ai-agent-instructions.md` exists in the project root.
 
-**If the file exists**: Read it in full and follow all guidance before running tests. This file contains project-specific testing prerequisites, setup instructions, and operational rules (e.g., starting Docker, launching dev servers, configuring environment variables). Complete all prerequisite steps before proceeding to step 2.
+**If the file exists**: Read it in full and follow all guidance before running tests. This file contains project-specific testing prerequisites, setup instructions, and operational rules (for example, starting Docker or dev servers, and setting environment variables). Complete all prerequisite steps before proceeding to step 2.
 
 **If the file does not exist**: Skip this step and proceed directly to running tests.
 
@@ -44,20 +44,13 @@ Then proceed to step 4 (learnings).
 
 **If any test command fails**:
 1. Read the error output and identify the root cause.
-2. Attempt to fix the issue.
+2. Repair it.
 3. Re-run **ALL** test commands (not just the one that failed).
-4. You have a maximum of **3 fix attempts**.
+4. Do this again until all commands pass. There is no limit on the number of attempts.
 
-**If all commands pass within 3 attempts**: Proceed to step 4.
+**When all commands pass**: Proceed to step 4.
 
-**If still failing after 3 attempts**: **HALT immediately.**
-- Do NOT proceed to push-deploy or any subsequent block.
-- Report:
-  - Which test command failed
-  - The exit code
-  - Relevant output (last 20 lines)
-  - What fixes were attempted
-  - Clear statement: **"Cannot proceed — QA tests failing after 3 fix attempts. Manual intervention required."**
+**If the repair needs something that only the user has**, do NOT proceed to push-deploy or a subsequent block. Examples are a credential, or a business rule that the spec does not cover. Report the failed command, its exit code and the last 20 lines of its output. Report what you tried, and name the blocker.
 
 ### 4. Record testing learnings
 
@@ -73,21 +66,11 @@ After all tests pass (or after resolving failures), reflect on the testing proce
 
 **If you have new learnings**:
 1. Read `qa/ai-agent-instructions.md` (if it exists) to check for duplicates.
-2. If the learning is NOT already documented, append it to the file under a dated `## Learnings` section:
-   ```markdown
-   ## Learnings
-
-   ### YYYY-MM-DD
-   - [Description of what was learned]
-   ```
-3. If `qa/ai-agent-instructions.md` does not exist, create it with a minimal header and the learnings section:
-   ```markdown
-   # QA Testing Instructions
-
-   ## Learnings
-
-   ### YYYY-MM-DD
-   - [Description of what was learned]
-   ```
+2. If the learning is not documented yet, add it to the section of the file that covers its
+   topic, as one short line. Update an existing line instead of adding a second one. Do not
+   add dates, ticket stories or a dated log.
+3. If `qa/ai-agent-instructions.md` does not exist, create it with a `# QA Testing
+   Instructions` header and one section for the topic.
+4. Remove a line that is no longer true when you find one.
 
 **If you have no new learnings**: Do not modify the file.

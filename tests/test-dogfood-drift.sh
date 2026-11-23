@@ -27,6 +27,7 @@ MAPPINGS=(
   "core/scripts/bash:.trc/scripts/bash"
   "core/hooks:.claude/hooks"
   "core/blocks:.trc/blocks"
+  "core/agents:.claude/agents"
 )
 
 drifted=()

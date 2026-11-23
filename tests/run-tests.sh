@@ -57,7 +57,7 @@ run_test "all hook scripts are executable" bash -c '
 '
 
 run_test "all command templates exist" bash -c '
-  for cmd in trc.specify trc.plan trc.tasks trc.implement trc.clarify trc.analyze trc.constitution trc.checklist trc.headless trc.taskstoissues; do
+  for cmd in trc.plan trc.implement trc.constitution trc.chain trc.band trc.audit; do
     [ -f "'"$REPO_ROOT"'/core/commands/$cmd.md" ] || exit 1
   done
 '
@@ -84,6 +84,14 @@ run_test "all modules have a README" bash -c '
   done
 '
 
+# ── Command assembly ──
+
+echo ""
+echo "Command assembly:"
+
+run_test "assembler builds trc.plan and trc.implement from blocks (tests/test-assemble-commands.sh)" \
+  bash "$REPO_ROOT/tests/test-assemble-commands.sh"
+
 # ── Init with presets ──
 
 echo ""
@@ -100,7 +108,7 @@ run_test "creates tricycle.config.yml from single-app preset" bash -c '
 '
 
 run_test "installs .claude/settings.json" assert_file_exists "$TMPDIR_INIT/init-single/.claude/settings.json"
-run_test "installs hook scripts as executable" assert_file_executable "$TMPDIR_INIT/init-single/.claude/hooks/block-spec-in-main.sh"
+run_test "installs hook scripts as executable" assert_file_executable "$TMPDIR_INIT/init-single/.claude/hooks/rename-on-kickoff.sh"
 run_test "installs command templates" assert_file_exists "$TMPDIR_INIT/init-single/.claude/commands/trc.plan.md"
 run_test "creates .tricycle.lock" assert_file_exists "$TMPDIR_INIT/init-single/.tricycle.lock"
 run_test "creates constitution placeholder" assert_file_exists "$TMPDIR_INIT/init-single/.trc/memory/constitution.md"
@@ -309,8 +317,9 @@ run_test "SessionStart omitted when constitution false and no files" bash -c '
 echo ""
 echo "Skills system:"
 
-run_test "init installs all 5 vendored skills" bash -c '
+run_test "init installs all vendored skills" bash -c '
   dir="'"$TMPDIR_INIT"'/init-single"
+  [ -d "$dir/.claude/skills/ste-short" ] &&
   [ -d "$dir/.claude/skills/code-reviewer" ] &&
   [ -d "$dir/.claude/skills/tdd" ] &&
   [ -d "$dir/.claude/skills/debugging" ] &&
@@ -381,8 +390,9 @@ run_test "catholic skill has SOURCE file" bash -c '
 '
 
 run_test "catholic block exists with correct frontmatter" bash -c '
-  f="'"$REPO_ROOT"'/core/blocks/optional/specify/catholic.md"
+  f="'"$REPO_ROOT"'/core/blocks/optional/plan/catholic.md"
   [ -f "$f" ] &&
+  head -10 "$f" | grep -q "step: plan" &&
   head -10 "$f" | grep -q "order: 1" &&
   head -10 "$f" | grep -q "required: false" &&
   head -10 "$f" | grep -q "default_enabled: false"
@@ -497,17 +507,18 @@ run_test "--no-checkout still outputs valid JSON" bash -c '
   cd "$dir" && git init -q && git commit --allow-empty -m "init" -q && mkdir -p specs
   out=$("'"$CREATE_SCRIPT"'" "Add feature" --style ordered --short-name "test-noco3" --json --no-checkout 2>/dev/null)
   echo "$out" | grep -q "\"BRANCH_NAME\":\"001-test-noco3\"" || exit 1
-  echo "$out" | grep -q "\"SPEC_FILE\":" || exit 1
+  echo "$out" | grep -q "\"FEATURE_NUM\":\"001\"" || exit 1
+  ! echo "$out" | grep -q "SPEC_FILE" || exit 1
   rm -rf "$dir"
 '
 
-run_test "without --no-checkout still checks out branch (backwards compat)" bash -c '
+run_test "without --no-checkout the script checks out the new branch" bash -c '
   dir=$(mktemp -d)
   cd "$dir" && git init -q && git commit --allow-empty -m "init" -q && mkdir -p specs
   out=$("'"$CREATE_SCRIPT"'" "Add feature" --style ordered --short-name "test-compat" --json 2>/dev/null)
   current=$(git rev-parse --abbrev-ref HEAD)
   [ "$current" = "001-test-compat" ] || exit 1
-  [ -d specs/001-test-compat ] || exit 1
+  [ ! -e specs/001-test-compat ] || exit 1
   rm -rf "$dir"
 '
 
@@ -552,7 +563,7 @@ EOS
   [ -f "$wt/.env.local" ] || { echo ".env.local missing" >&2; rm -rf "$parent"; exit 1; }
   [ -d "$wt/node_modules" ] || [ -f "$wt/package-lock.json" ] || { echo "install never ran" >&2; rm -rf "$parent"; exit 1; }
   [ -d "$wt/.trc" ] || { echo ".trc not copied" >&2; rm -rf "$parent"; exit 1; }
-  [ -f "$wt/specs/demo/spec.md" ] || { echo "spec not created" >&2; rm -rf "$parent"; exit 1; }
+  [ ! -e "$wt/specs/demo" ] || { echo "a per-branch spec dir was created" >&2; rm -rf "$parent"; exit 1; }
   rm -rf "$parent"
 '
 
@@ -773,177 +784,39 @@ run_test "without --provision-worktree no WORKTREE_PATH key in JSON (backwards c
 echo ""
 echo "Status command:"
 
+STATUS_FX=$(mktemp -d)
+mkdir -p "$STATUS_FX/docs/specs"
+printf 'project:\n  name: s\n' > "$STATUS_FX/tricycle.config.yml"
+printf '# Add export\n\nSource: X-1 · Status: validated\n\n## Checklist\n\n- [x] a\n- [ ] b\n' > "$STATUS_FX/docs/specs/X-1.md"
+printf '# Fix login\n\nSource: X-2 · Status: draft\n\n## Checklist\n\n- [ ] a\n' > "$STATUS_FX/docs/specs/X-2.md"
+
 run_test "status --help mentions status" bash -c '
   "'"$CLI"'" --help 2>&1 | grep -q "tricycle status"
 '
 
-run_test "status shows table output for features at different stages" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "$CLI" init --preset single-app >/dev/null 2>&1
-
-  # Create features at different stages
-  mkdir -p specs/TRI-1-alpha
-  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
-
-  mkdir -p specs/TRI-2-beta
-  printf "# Spec\n" > specs/TRI-2-beta/spec.md
-  printf "# Plan\n" > specs/TRI-2-beta/plan.md
-  printf "# Tasks\n- [ ] T001 Do something\n" > specs/TRI-2-beta/tasks.md
-
-  mkdir -p specs/TRI-3-gamma
-  printf "# Spec\n" > specs/TRI-3-gamma/spec.md
-  printf "# Plan\n" > specs/TRI-3-gamma/plan.md
-  printf "# Tasks\n- [x] T001 Done\n" > specs/TRI-3-gamma/tasks.md
-
-  output=$("$CLI" status --all 2>&1)
-  echo "$output" | grep -q "TRI-1" &&
-  echo "$output" | grep -q "specify" &&
-  echo "$output" | grep -q "TRI-2" &&
-  echo "$output" | grep -q "tasks" &&
-  echo "$output" | grep -q "TRI-3" &&
-  echo "$output" | grep -q "done"
-  rm -rf "$dir"
+run_test "status lists every spec with its status and checklist progress" bash -c '
+  out=$(cd "'"$STATUS_FX"'" && "'"$CLI"'" status)
+  echo "$out" | grep -E "X-1 .*Add export .*validated .*1/2" >/dev/null &&
+  echo "$out" | grep -E "X-2 .*Fix login .*draft .*0/1" >/dev/null
 '
 
-run_test "status --json outputs valid parseable JSON" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/TRI-1-test
-  printf "# Spec\n" > specs/TRI-1-test/spec.md
-  output=$("'"$CLI"'" status --json --all 2>&1)
-  node -e "
-    const d = JSON.parse(process.argv[1]);
-    if (!Array.isArray(d)) process.exit(1);
-    if (d.length !== 1) process.exit(1);
-    if (d[0].id !== \"TRI-1\") process.exit(1);
-    if (d[0].stage !== \"specify\") process.exit(1);
-    if (typeof d[0].progress !== \"number\") process.exit(1);
-  " "$output"
-  rm -rf "$dir"
+run_test "status --json outputs parseable JSON" bash -c '
+  cd "'"$STATUS_FX"'" && "'"$CLI"'" status --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert {x[\"id\"] for x in d} == {\"X-1\",\"X-2\"}; assert [x for x in d if x[\"id\"]==\"X-1\"][0][\"done\"] == 1"
 '
 
-run_test "status --json returns empty array for no features" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs
-  rm -rf specs/*/
-  output=$("'"$CLI"'" status --json 2>&1)
-  [ "$output" = "[]" ]
-  rm -rf "$dir"
+run_test "status filter by spec id" bash -c '
+  out=$(cd "'"$STATUS_FX"'" && "'"$CLI"'" status X-2)
+  echo "$out" | grep -q "X-2" && ! echo "$out" | grep -q "X-1"
 '
 
-run_test "status filter by ID shows only matching feature" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/TRI-1-alpha specs/TRI-2-beta
-  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
-  printf "# Spec\n" > specs/TRI-2-beta/spec.md
-  output=$("'"$CLI"'" status TRI-1 2>&1)
-  echo "$output" | grep -q "alpha" &&
-  ! echo "$output" | grep -q "beta"
-  rm -rf "$dir"
+run_test "status with no specs points to /trc.plan" bash -c '
+  d=$(mktemp -d); printf "project:\n  name: e\n" > "$d/tricycle.config.yml"
+  (cd "$d" && "'"$CLI"'" status) | grep -q "/trc.plan"
 '
 
-run_test "status filter shows not-found message for unknown ID" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/TRI-1-alpha
-  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
-  output=$("'"$CLI"'" status TRI-999 2>&1)
-  echo "$output" | grep -q "No feature found matching TRI-999"
-  rm -rf "$dir"
-'
-
-run_test "status --json with filter returns filtered array" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/TRI-1-alpha specs/TRI-2-beta
-  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
-  printf "# Spec\n" > specs/TRI-2-beta/spec.md
-  output=$("'"$CLI"'" status TRI-1 --json 2>&1)
-  node -e "
-    const d = JSON.parse(process.argv[1]);
-    if (d.length !== 1) process.exit(1);
-    if (d[0].id !== \"TRI-1\") process.exit(1);
-  " "$output"
-  rm -rf "$dir"
-'
-
-run_test "status shows message for empty specs dir" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs
-  rm -rf specs/*/
-  output=$("'"$CLI"'" status 2>&1)
-  echo "$output" | grep -q "No features found"
-  rm -rf "$dir"
-'
-
-run_test "status handles feature dir with no artifacts (stage=empty)" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/orphaned-feature
-  output=$("'"$CLI"'" status --all 2>&1)
-  echo "$output" | grep -q "orphaned-feature" &&
-  echo "$output" | grep -q "empty"
-  rm -rf "$dir"
-'
-
-run_test "status handles non-standard dir names" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/my-custom-feature
-  printf "# Spec\n" > specs/my-custom-feature/spec.md
-  output=$("'"$CLI"'" status --all 2>&1)
-  echo "$output" | grep -q "my-custom-feature" &&
-  echo "$output" | grep -q "specify"
-  rm -rf "$dir"
-'
-
-run_test "status detects implement stage (some tasks checked)" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/TRI-1-wip
-  printf "# Tasks\n- [x] T001 Done\n- [ ] T002 Not done\n" > specs/TRI-1-wip/tasks.md
-  output=$("'"$CLI"'" status --all 2>&1)
-  echo "$output" | grep -q "implement"
-  rm -rf "$dir"
-'
-
-run_test "status default shows only features with active worktrees" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/TRI-1-alpha specs/TRI-2-beta
-  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
-  printf "# Spec\n" > specs/TRI-2-beta/spec.md
-  output=$("'"$CLI"'" status 2>&1)
-  echo "$output" | grep -q "No active worktrees" &&
-  ! echo "$output" | grep -q "TRI-1" &&
-  ! echo "$output" | grep -q "TRI-2"
-  rm -rf "$dir"
-'
-
-run_test "status --all shows features without worktrees" bash -c '
-  dir=$(mktemp -d)
-  cd "$dir" && git init -q && git commit --allow-empty -m "init" -q
-  echo "test-proj" | "'"$CLI"'" init --preset single-app >/dev/null 2>&1
-  mkdir -p specs/TRI-1-alpha
-  printf "# Spec\n" > specs/TRI-1-alpha/spec.md
-  output=$("'"$CLI"'" status --all 2>&1)
-  echo "$output" | grep -q "TRI-1" &&
-  echo "$output" | grep -q "specify"
-  rm -rf "$dir"
+run_test "status with a tracker store says where specs live" bash -c '
+  d=$(mktemp -d); printf "project:\n  name: e\nspec:\n  store: linear\n" > "$d/tricycle.config.yml"
+  (cd "$d" && "'"$CLI"'" status) | grep -q "spec.store: linear"
 '
 
 # ── chain-run.sh (TRI-27) ──
@@ -952,6 +825,12 @@ echo ""
 echo "chain-run.sh (TRI-27):"
 
 run_test "e2e happy path (tests/test-chain-run-e2e-happy.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-happy.sh"
+run_test "parallel scheduler: slot cap, dependency gating, cycles (tests/test-chain-run-parallel.sh)" bash "$REPO_ROOT/tests/test-chain-run-parallel.sh"
+run_test "chain and band reconcilers classify workers (tests/test-reconcile.sh)" bash "$REPO_ROOT/tests/test-reconcile.sh"
+run_test "branch-name parsers keep quotes and refuse blank input (tests/test-feature-description.sh)" bash "$REPO_ROOT/tests/test-feature-description.sh"
+run_test "update installs only the core hooks settings register (tests/test-update-core-hooks-wanted.sh)" bash "$REPO_ROOT/tests/test-update-core-hooks-wanted.sh"
+run_test "update is byte-exact, keeps the lock, and is a no-op twice (tests/test-update-idempotent.sh)" bash "$REPO_ROOT/tests/test-update-idempotent.sh"
+run_test "generated .gitignore ignores chain and band run state (tests/test-gitignore-run-state.sh)" bash "$REPO_ROOT/tests/test-gitignore-run-state.sh"
 run_test "e2e stop-on-failure (tests/test-chain-run-e2e-failure.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-failure.sh"
 run_test "e2e resume flow (tests/test-chain-run-e2e-resume.sh)" bash "$REPO_ROOT/tests/test-chain-run-e2e-resume.sh"
 run_test "epic brief copy + missing (tests/test-chain-run-epic-brief.sh)" bash "$REPO_ROOT/tests/test-chain-run-epic-brief.sh"
@@ -1056,6 +935,14 @@ echo "Graphify integration:"
 
 run_test "generate settings registers graphify hook (tests/test-generate-settings-graphify-hook.sh)" \
   bash "$REPO_ROOT/tests/test-generate-settings-graphify-hook.sh"
+run_test "generate settings builds hooks and permissions only from config (tests/test-generate-settings-config-hooks.sh)" \
+  bash "$REPO_ROOT/tests/test-generate-settings-config-hooks.sh"
+
+run_test "style-gate lints persisted prose and fails open (tests/test-style-gate.sh)" \
+  bash "$REPO_ROOT/tests/test-style-gate.sh"
+
+run_test "generate settings turns style config into outputs (tests/test-generate-style.sh)" \
+  bash "$REPO_ROOT/tests/test-generate-style.sh"
 
 run_test "kickoff hook silent-skip gates (tests/test-graphify-hook-gating.sh)" \
   bash "$REPO_ROOT/tests/test-graphify-hook-gating.sh"
@@ -1065,14 +952,6 @@ run_test "tricycle graphify subcommand lifecycle (tests/test-tricycle-graphify-c
 
 run_test "graphify briefing contract (tests/test-graphify-briefing-contract.sh)" \
   bash "$REPO_ROOT/tests/test-graphify-briefing-contract.sh"
-
-# ── trc.review (TRI-28) ──
-
-echo ""
-echo "trc.review (TRI-28):"
-
-run_test "trc.review structural smoke tests (tests/test-trc-review.sh)" \
-  bash "$REPO_ROOT/tests/test-trc-review.sh"
 
 # ── Stealth mode (TRI-21) ──
 

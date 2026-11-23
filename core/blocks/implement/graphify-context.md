@@ -1,7 +1,7 @@
 ---
 name: graphify-context
 step: implement
-description: Brief the agent on the graphify knowledge graph (runtime conditional; opt-out via integrations.graphify.enabled=false)
+description: Brief the agent on the graphify knowledge graph (runtime gate, opt out with integrations.graphify.enabled=false)
 required: false
 default_enabled: true
 order: 25
@@ -35,13 +35,13 @@ querying it BEFORE wide file reads:
 - **MCP** (only if `.mcp.json` has a `graphify` entry AND it was
   registered before this `claude` session started): tools
   `{query_graph, get_node, get_neighbors, get_community, god_nodes,
-  graph_stats, shortest_path}`. Mid-session `.mcp.json` edits do NOT
-  hot-load, so do not assume these tools exist — probe by calling one
-  and fall back to the shell CLI above on failure.
+  graph_stats, shortest_path}`. Claude Code does not load `.mcp.json`
+  edits mid-session. Do not assume that these tools exist. Call one to
+  probe them, and use the shell CLI above if the call fails.
 
-**WHEN to query**: architectural questions (where is X defined, who
-calls Y, what depends on Z), code-location lookups before grepping,
-"is there already a util for this?". Every edge carries a provenance
+**WHEN to query**: architectural questions, such as where X is defined,
+who calls Y, or what depends on Z. Also query before you grep for a
+location, and to find a helper that already exists. Every edge carries a provenance
 tag — EXTRACTED (found directly), INFERRED (reasonable guess with
 confidence), AMBIGUOUS (flagged). Treat INFERRED as a hint, not truth.
 

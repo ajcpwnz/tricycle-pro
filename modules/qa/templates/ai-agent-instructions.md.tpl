@@ -12,7 +12,7 @@ Use **Playwright MCP** only as a fallback when Chrome cannot achieve the test
 (e.g., multi-step auth flows, file uploads, headless automation).
 
 ## What to Test
-- Execute test cases from `qa/test-plan-ai-agent.md` in dependency order.
+- Walk the user journeys the change touches, in the order a user takes them.
 - **MANDATORY**: Monitor for network errors — check browser console for failed requests
   (4xx, 5xx), CORS errors, and uncaught exceptions. Record ALL errors.
 

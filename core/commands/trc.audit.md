@@ -1,7 +1,8 @@
 ---
 description: >-
-  Audit scoped files against the project constitution, a custom prompt,
-  or common-sense best practices. Produces structured reports in docs/audits/.
+  Audit files against the project constitution, a custom prompt, or a fixed
+  set of engineering checks. Writes a report to docs/audits/, and with
+  --linear files the findings in Linear.
 ---
 
 ## User Input
@@ -10,134 +11,101 @@ description: >-
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+## What this command is
 
-## Audit Execution
+An audit is your judgment, not a linter run. You read each file and decide where
+it breaks a rule. Every finding quotes the line that proves it. Some claims can be
+tested by running something, such as a hook, a script or an endpoint. Run it and
+record the result as evidence.
 
-### 1. Parse Arguments
+### 1. Parse the arguments
 
-Parse the user input for:
+- **Paths** (positional): files, directories or globs.
+- **`--feature <branch>`**: the files that `<branch>` changes against the base.
+- **`--prompt "<criteria>"`**: custom criteria, checked as well as the
+  constitution.
+- **`--linear`**: after the report, file the findings in Linear.
 
-- **Scope** (positional): File paths or glob patterns (e.g., `src/`, `bin/*.sh`, `tests/`). If no scope is provided, audit all tracked files in the repository (`git ls-files`).
-- **`--feature <branch-name>`**: Scope to files changed by a feature. Resolve by running `git diff --name-only main...<branch-name>` and including the feature's spec directory (`specs/<branch-name>/`).
-- **`--prompt "<criteria>"`**: Custom audit criteria to evaluate alongside or instead of the constitution.
+The base branch is `push.pr_target` in `tricycle.config.yml`, then
+`project.base_branch`, then `main`. Use `origin/<base>` when it exists.
 
-If both `--feature` and file paths are provided, combine them (union of both scopes).
+### 2. Resolve the scope
 
-### 2. Load Constitution
+- **Paths given:** expand them to a list of files.
+- **`--feature <branch>`:** `git diff --name-only <base>...<branch>`. Combine it
+  with any paths given.
+- **Nothing given:** the files that the current branch changes against the base.
+  Add the uncommitted and untracked files. Use
+  `git diff --name-only <base>...HEAD`, `git diff --name-only HEAD` and
+  `git ls-files --others --exclude-standard`. Never audit the whole repository by
+  default.
 
-Read the constitution path from `tricycle.config.yml` (`constitution.root`, default `.trc/memory/constitution.md`).
+Drop deleted files and binary files (images, fonts, archives, compiled output),
+and list the binary files that you dropped. If no file is left, stop and tell the
+user to pass a path.
 
-**Validation**:
-- If the file does not exist: ERROR "Constitution file not found at <path>."
-- If the file contains the placeholder text `_Run \`/trc.constitution\` to populate this file._`: The constitution is NOT populated.
-  - If a `--prompt` was provided: WARN "Constitution not populated — auditing against custom prompt only." Proceed with custom prompt.
-  - If NO `--prompt` was provided: WARN "Constitution not populated — auditing against common-sense best practices." Proceed with common-sense fallback.
-- If the file has real content: Extract individual rules/principles. Each top-level heading or numbered item in the constitution is treated as a separate auditable rule.
+### 3. Load the rules
 
-### 3. Resolve Scope to File List
+Read the constitution at `constitution.root` (default
+`.trc/memory/constitution.md`). Each top-level heading or numbered item is one
+rule.
 
-1. Expand file paths and globs to a concrete list of files.
-2. For `--feature`, run `git diff --name-only main...<branch>` to get changed files.
-3. Filter out binary files (images, compiled assets, fonts). Detect by checking if `file --mime-type` reports a non-text type, or if the extension is in: `.png`, `.jpg`, `.jpeg`, `.gif`, `.ico`, `.woff`, `.woff2`, `.ttf`, `.eot`, `.pdf`, `.zip`, `.tar`, `.gz`, `.bin`, `.exe`, `.dll`, `.so`, `.dylib`.
-4. Report skipped binary files in the output.
-5. If no files remain after filtering: ERROR "No auditable files found in scope."
+- **Missing file:** stop with an error.
+- **Placeholder only** (`Run /trc.constitution to populate this file.`): warn the
+  user. Use `--prompt` if it was given. Otherwise use the fixed checks: naming,
+  function size, error handling, security (credentials, injection, path
+  traversal), dead code, and consistency with the rest of the project.
 
-### 4. Evaluate Files
+### 4. Evaluate
 
-For each audit source (constitution rules, custom prompt, common-sense), evaluate every file in scope:
+Check each file against each rule. For more than 15 files, split the files into
+groups of about 15. Give each group to a worker subagent (Agent tool, model from
+`models.workers` in `tricycle.config.yml`, default `opus`), and run the workers in
+parallel. Give each worker the
+rules, its files and the finding format. Ask it for findings only, not file
+contents.
 
-**Constitution audit** (if constitution is populated):
-- For each rule in the constitution, check whether the file complies.
-- Record findings with severity:
-  - **critical**: Clear violation of a mandatory rule
-  - **warning**: Partial compliance or borderline violation
-  - **info**: Observation or suggestion related to the rule
-- Include evidence: quote the specific code or text that triggers the finding.
+Record each finding with:
 
-**Custom prompt audit** (if `--prompt` provided):
-- Evaluate each file against the user's custom criteria.
-- Apply the same severity levels and evidence format.
+- **Severity:** `critical` for a clear break of a mandatory rule, `warning` for a
+  partial or borderline break, `info` for an observation.
+- **Location:** `path:line`.
+- **Evidence:** the quoted line, or the command and its output.
+- **Recommendation:** what to change.
 
-**Common-sense audit** (fallback when no constitution and no prompt):
-- Evaluate files against standard engineering best practices:
-  - **Naming**: Are function, variable, and file names clear and descriptive?
-  - **Complexity**: Are functions reasonably sized (not excessively long)?
-  - **Error handling**: Are errors handled rather than silently swallowed?
-  - **Security**: No hardcoded credentials, no command injection risks, no path traversal?
-  - **Dead code**: No commented-out code blocks, no unreachable code?
-  - **Consistency**: Does the code follow patterns established elsewhere in the project?
+Check each worker finding before you keep it. Open the cited line and check that
+it says what the finding claims.
 
-### 5. Generate Report
+### 5. Write the report
 
-Create a markdown report at `docs/audits/audit-YYYY-MM-DD-<scope-summary>.md`:
+Write `docs/audits/audit-YYYY-MM-DD-<scope-summary>.md`:
 
 ```markdown
 # Audit Report
 
 **Date**: YYYY-MM-DD
-**Scope**: <files or feature audited>
-**Sources**: <Constitution, Custom Prompt, Common Sense — whichever were used>
-**Summary**: X critical, Y warning, Z info, W passed
+**Scope**: <the scope and how it was resolved>
+**Sources**: <Constitution, Custom Prompt, Fixed Checks>
+**Summary**: X critical, Y warning, Z info
 
-## Constitution Findings
+## Findings
 
-### CRITICAL: <Rule name>
+### CRITICAL: <rule>
 - **File**: path/to/file.ext:line
-- **Evidence**: `<relevant code snippet>`
-- **Recommendation**: <what to fix>
-
-### WARNING: <Rule name>
-- **File**: path/to/file.ext:line
-- **Evidence**: `<relevant code snippet>`
-- **Recommendation**: <what to fix>
-
-## Custom Prompt Findings
-
-### <severity>: <criterion>
-- **File**: path/to/file.ext:line
-- **Evidence**: `<relevant code snippet>`
-- **Recommendation**: <what to fix>
-
-## Common Sense Findings
-
-### <severity>: <category>
-- **File**: path/to/file.ext:line
-- **Evidence**: `<relevant code snippet>`
-- **Recommendation**: <what to fix>
+- **Evidence**: `<quoted line or command output>`
+- **Recommendation**: <what to change>
 
 ## Skipped Files
 
 - path/to/image.png (binary)
-- path/to/font.woff2 (binary)
-
-## Summary
-
-| Source | Critical | Warning | Info | Passed |
-|--------|----------|---------|------|--------|
-| Constitution | X | Y | Z | W |
-| Custom Prompt | X | Y | Z | W |
-| Common Sense | X | Y | Z | W |
-| **Total** | **X** | **Y** | **Z** | **W** |
 ```
 
-Report the file path to the user after generation.
+### 6. File in Linear (only with --linear)
 
-### 6. Invoke Output Skills
+Invoke the `linear-audit` skill with the report path. If the skill or a Linear MCP
+server is not available, say so. The report stays the only output.
 
-After the report is written, check `tricycle.config.yml` for configured output skills:
+### 7. Report
 
-1. Read `workflow.blocks.audit.skills` from the config (using the same config access pattern as other steps).
-2. For each listed skill name:
-   - Check if `.claude/skills/<skill-name>/SKILL.md` exists.
-   - If installed: invoke `/<skill-name>` and pass context about the audit report location (`docs/audits/<filename>.md`).
-   - If not installed: skip silently.
-3. If no skills are configured, skip this step entirely — the local report is the only output.
-
-### 7. Report Completion
-
-Output a summary:
-- Report file path
-- Total findings by severity
-- Which output skills were invoked (if any)
-- If all checks passed: "All checks passed — no findings."
+State the report path, the counts by severity, and whether the findings went to
+Linear. If no rule broke, say "All checks passed: no findings."

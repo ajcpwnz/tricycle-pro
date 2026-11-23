@@ -4,7 +4,7 @@ description: Create git worktree for any new feature branch instead of git check
 type: feedback
 ---
 
-NONNEGOTIABLE: Always create a git worktree for ANY new feature work, not just trc.specify.
+NONNEGOTIABLE: Always create a git worktree for ANY new feature work, not just /trc.implement.
 The only exception is if the user explicitly says to work on the current branch.
 
 **Why:** Regular branch switching causes stashing headaches, lost context, dependency reinstalls,

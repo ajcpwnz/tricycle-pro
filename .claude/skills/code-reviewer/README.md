@@ -13,7 +13,7 @@ Invoke manually:
 /code-reviewer
 ```
 
-Or reference from a workflow block:
+Or reference it from a custom block in `.trc/blocks/custom/`:
 ```markdown
 If `.claude/skills/code-reviewer/SKILL.md` exists, invoke `/code-reviewer`
 on the staged changes before requesting push approval.

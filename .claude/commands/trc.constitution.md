@@ -1,9 +1,5 @@
 ---
-description: Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync.
-handoffs:
-  - label: Build Specification
-    agent: trc.specify
-    prompt: Implement the feature specification based on the updated constitution. I want to build...
+description: Create the project constitution, or amend one principle of it, and keep the references to it true.
 ---
 
 ## User Input
@@ -12,73 +8,42 @@ handoffs:
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+## Constitution
 
-## Outline
+The constitution lives at `constitution.root` in `tricycle.config.yml` (default
+`.trc/memory/constitution.md`). The validator, `/trc.plan` and `/trc.implement` read
+it. It is the project's list of rules that the code must follow.
 
-You are updating the project constitution at `.trc/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
+### Create
 
-**Note**: If `.trc/memory/constitution.md` does not exist yet, it should have been initialized from `.trc/templates/constitution-template.md` during project setup. If it's missing, copy the template first.
+Use this when the file is missing, holds only the line that `tricycle init` writes
+(`Run /trc.constitution to populate this file.`), or still holds the `[PLACEHOLDER]`
+tokens of `.trc/templates/constitution-template.md`.
 
-Follow this execution flow:
+1. Read the user input, `CLAUDE.md`, the README and the code. Derive the rules that
+   the project already follows or that the user asks for.
+2. Write one section per principle: a short name, then the rule. Use MUST or NEVER,
+   so a reviewer can check the rule against the code. Add the reason when the rule
+   does not explain itself.
+3. Set the version to `1.0.0` and both dates to today.
 
-1. Load the existing constitution at `.trc/memory/constitution.md`.
-   - Identify every placeholder token of the form `[ALL_CAPS_IDENTIFIER]`.
-   **IMPORTANT**: The user might require less or more principles than the ones used in the template. If a number is specified, respect that - follow the general template. You will update the doc accordingly.
+### Amend
 
-2. Collect/derive values for placeholders:
-   - If user input (conversation) supplies a value, use it.
-   - Otherwise infer from existing repo context (README, docs, prior constitution versions if embedded).
-   - For governance dates: `RATIFICATION_DATE` is the original adoption date (if unknown ask or mark TODO), `LAST_AMENDED_DATE` is today if changes are made, otherwise keep previous.
-   - `CONSTITUTION_VERSION` must increment according to semantic versioning rules:
-     - MAJOR: Backward incompatible governance/principle removals or redefinitions.
-     - MINOR: New principle/section added or materially expanded guidance.
-     - PATCH: Clarifications, wording, typo fixes, non-semantic refinements.
-   - If version bump type ambiguous, propose reasoning before finalizing.
+Use this when the file already holds real principles.
 
-3. Draft the updated constitution content:
-   - Replace every placeholder with concrete text (no bracketed tokens left except intentionally retained template slots that the project has chosen not to define yet—explicitly justify any left).
-   - Preserve heading hierarchy and comments can be removed once replaced unless they still add clarifying guidance.
-   - Ensure each Principle section: succinct name line, paragraph (or bullet list) capturing non‑negotiable rules, explicit rationale if not obvious.
-   - Ensure Governance section lists amendment procedure, versioning policy, and compliance review expectations.
+1. Change only what the user asks for. Keep every other line exactly as it is.
+2. Read the other principles. If the change conflicts with one of them, ask the user
+   with `AskUserQuestion` before you write.
+3. Bump the version. MAJOR removes or redefines a principle. MINOR adds a principle or
+   widens one. PATCH changes only the wording. Set `Last Amended` to today.
 
-4. Consistency propagation checklist (convert prior checklist into active validations):
-   - Read `.trc/templates/plan-template.md` and ensure any "Constitution Check" or rules align with updated principles.
-   - Read `.trc/templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
-   - Read `.trc/templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
-   - Read each command file in `.trc/templates/commands/*.md` (including this one) to verify no outdated references (agent-specific names like CLAUDE only) remain when generic guidance is required.
-   - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
+### Keep references true
 
-5. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
-   - Version change: old → new
-   - List of modified principles (old title → new title if renamed)
-   - Added sections
-   - Removed sections
-   - Templates requiring updates (✅ updated / ⚠ pending) with file paths
-   - Follow-up TODOs if any placeholders intentionally deferred.
+Search `CLAUDE.md`, `AGENTS.md` and `.trc/blocks/custom/` for the name or number of
+each changed principle. Fix each reference that the change made false. Do not
+create any other file.
 
-6. Validation before final output:
-   - No remaining unexplained bracket tokens.
-   - Version line matches report.
-   - Dates ISO format YYYY-MM-DD.
-   - Principles are declarative, testable, and free of vague language ("should" → replace with MUST/SHOULD rationale where appropriate).
+### Report
 
-7. Write the completed constitution back to `.trc/memory/constitution.md` (overwrite).
-
-8. Output a final summary to the user with:
-   - New version and bump rationale.
-   - Any files flagged for manual follow-up.
-   - Suggested commit message (e.g., `docs: amend constitution to vX.Y.Z (principle additions + governance update)`).
-
-Formatting & Style Requirements:
-
-- Use Markdown headings exactly as in the template (do not demote/promote levels).
-- Wrap long rationale lines to keep readability (<100 chars ideally) but do not hard enforce with awkward breaks.
-- Keep a single blank line between sections.
-- Avoid trailing whitespace.
-
-If the user supplies partial updates (e.g., only one principle revision), still perform validation and version decision steps.
-
-If critical info missing (e.g., ratification date truly unknown), insert `TODO(<FIELD_NAME>): explanation` and include in the Sync Impact Report under deferred items.
-
-Do not create a new template; always operate on the existing `.trc/memory/constitution.md` file.
+State the old and the new version, the principles that changed, the references
+that you fixed, and a one-line commit message.

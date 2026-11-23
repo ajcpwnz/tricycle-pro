@@ -10,7 +10,7 @@ Monitors GitHub Actions CI and deploy workflows, waiting for completion and diag
 ## Installation
 
 ```bash
-npx tricycle-pro add ci-watch
+tricycle add ci-watch
 ```
 
 ## Usage

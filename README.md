@@ -2,24 +2,15 @@
 
 AI-driven, spec-first development workflow toolkit for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-Based on [Spec Kit](https://github.com/github/spec-kit) — an open-source framework for structured, spec-driven AI development. Tricycle Pro packages those patterns into an installable toolkit with slash commands, hooks, templates, and optional modules.
+Tricycle Pro gives Claude Code two commands. `/trc.plan` writes or revalidates one compact spec. `/trc.implement` starts only after an independent validator passes that spec, then works its checklist to the end.
 
 ## What It Does
 
-Gives your AI agent structure: **specs before code**, constitutions for consistency, pluggable blocks for customization, worktrees for isolation, and hooks for enforcement.
+trc is opt-in. A developer who never runs a trc command still works with the project's rules, because `CLAUDE.md` and the constitution load in every Claude Code session. The commands add the strict process on top.
 
 ```
-/specify → /plan → /tasks → /implement → lint/test (enforced by hook)
-```
-
-The workflow chain is configurable — you can run the full pipeline or skip steps:
-
-```yaml
-# tricycle.config.yml
-workflow:
-  chain: [specify, plan, tasks, implement]   # full (default)
-  chain: [specify, plan, implement]          # tasks absorbed into plan
-  chain: [specify, implement]                # plan+tasks absorbed into specify
+/trc.plan <request | ticket | spec>   →   spec (analysis, proposed solution, checklist), validated
+/trc.implement <spec>                 →   validation gate → work the checklist → lint/test → ship
 ```
 
 ## Quick Start
@@ -31,40 +22,77 @@ curl -fsSL https://raw.githubusercontent.com/ajcpwnz/tricycle-pro/main/install.s
 # Initialize a project
 tricycle init
 tricycle init --preset monorepo-turborepo
-
-# Or with npx
-npx tricycle-pro init
 ```
 
 After init, open Claude Code and run:
 
 ```
-/trc.specify Add user authentication with OAuth2
-```
-
-Or run the full chain in one shot:
-
-```
-/trc.headless Add user authentication with OAuth2
+/trc.plan Add user authentication with OAuth2
+/trc.implement add-user-authentication
 ```
 
 ## Workflow Overview
 
-Every feature flows through a chain of steps. Each step produces structured artifacts that feed the next:
+| Command | Input | What it does |
+|---------|-------|--------------|
+| `/trc.plan` | A request, a ticket id or URL, or a spec file | New work: enters plan mode (unless trivial), researches the code and the rules, writes the spec, validates it, stores it. An existing spec or a filled ticket is revalidated and fixed, never rewritten. |
+| `/trc.implement` | A spec id, ticket, or spec file | Validates the spec and stops on failure. Then works in a worktree (if configured), works the checklist item by item with proof, runs lint and tests, bumps the version and ships. |
+| `/trc.audit` | File scope + criteria | `docs/audits/audit-*.md` report |
+| `/trc.constitution` | Principles | Project constitution |
 
-| Step | Command | Input | Output |
-|------|---------|-------|--------|
-| **Specify** | `/trc.specify` | Natural language description | `spec.md`, quality checklist |
-| **Clarify** | `/trc.clarify` | Spec with ambiguities | Updated spec with resolved questions |
-| **Plan** | `/trc.plan` | Spec | `plan.md`, `research.md`, `data-model.md`, `contracts/` |
-| **Tasks** | `/trc.tasks` | Plan + spec | `tasks.md` (dependency-ordered, phased) |
-| **Implement** | `/trc.implement` | Tasks + plan | Working code, tests, version bump |
-| **Audit** | `/trc.audit` | File scope + criteria | `docs/audits/audit-*.md` report |
-| **Headless** | `/trc.headless` | Description | All of the above in one invocation |
+### The spec
 
-Additional commands: `/trc.analyze` (consistency audit), `/trc.checklist` (quality checklists), `/trc.constitution` (project principles), `/trc.taskstoissues` (GitHub issue creation).
+One file, three parts (`core/templates/spec-template.md`):
+
+- **Analysis:** the problem, current behavior with `path:line` references, constraints, out of scope.
+- **Proposed Solution:** the approach, decisions with the alternatives they beat, risks.
+- **Checklist:** one line per outcome, each naming its proof. Outcomes, not edit instructions.
+
+Where it lives is set by `spec.store`:
+
+```yaml
+spec:
+  store: repo        # repo: <spec.dir>/<id>.md, committed with the work
+                     # linear: the ticket description is the spec
+  dir: docs/specs
+```
+
+### Validation
+
+The `trc-spec-validator` agent (installed to `.claude/agents/`) reads the spec and the code with no context from the session that wrote it, and returns PASS or FAIL. It checks:
+
+- **Truthfulness:** every `path:line`, named file, function or behavior claim against the code.
+- **Ambiguity:** anything two engineers would build differently, and any open question.
+- **Quality:** cause over symptom, compliance with `CLAUDE.md` and the constitution, provable checklist lines that cover the whole solution.
+
+`/trc.plan` fixes findings and asks the user what only the user can settle. `/trc.implement` never fixes the spec: on FAIL it stops and points to `/trc.plan`.
+
+### Writing style (optional)
+
+Two plugins set the register, and trc wires them in only when they are installed:
+
+| Where | Style | Plugin | How trc applies it |
+|-------|-------|--------|--------------------|
+| Chat | `ultracave` (terse fragments, payload only) | [caveman](https://github.com/JuliusBrussee/caveman) | `style.chat` writes `.caveman.json`. The plugin injects its rules at session start, after compaction, on every turn and into every subagent. |
+| Persisted prose: docs, specs, commits, PR bodies, tickets | Short ASD-STE100 (the `ste-short` skill) | [asd-ste100](https://github.com/danyuchn/asd-ste100-skill) | `style.artifacts: ste-short` registers `style-gate.sh`. It lints the added prose with the plugin's linter and blocks on a hard finding. Commit messages follow the skill but are not gated. |
+
+Without a plugin, its part does nothing: `.caveman.json` is inert and `style-gate.sh` exits 0. A chat style is advice to the model. The artifact gate is a check the model cannot skip.
+
+### Models and workers
+
+`/trc.implement` hands self-contained checklist items and long test runs to worker subagents. The workers report back the diff summary and the evidence, so the main context stays slim. It re-checks every worker's proof itself before marking an item done.
+
+```yaml
+models:              # Claude Code aliases: fable, opus, sonnet, haiku
+  plan: fable        # /trc.plan (default fable)
+  implement: opus    # /trc.implement (default opus)
+  workers: opus      # implement's worker subagents (default opus)
+  validator: opus    # trc-spec-validator (default opus)
+```
 
 ### Orchestrators
+
+Both run `/trc.plan` then `/trc.implement` for each ticket, unattended. A spec that passes the validator counts as approved. A worker stops only for input that only the user holds.
 
 Two commands run the workflow across multiple tickets instead of one:
 
@@ -73,7 +101,11 @@ Two commands run the workflow across multiple tickets instead of one:
 | `/trc.chain TRI-100..TRI-105` | Flat range/list of 2–8 independent tickets | Serial, fire-and-report worker per ticket | Approval per ticket |
 | `/trc.band TRI-200` | One parent issue broken into sub-issues | Parallel step-controlled workers in dependency waves | One approval for the whole epic |
 
-`/trc.band` takes a parent Linear issue, fetches its sub-issues, and performs codebase recon into `specs/.band-runs/<run-id>/recon.md` — a high-level epic spec (from `recon-template.md`) with a dependency roadmap: waves of parallel-safe sub-issues, a complexity rating, and a worker model assignment per sub-issue. After the user approves the recon, it fans out background worker agents (up to `band.max_parallel`, default 3), each in its own git worktree, each running the configured `workflow.chain` **one step at a time** — every step reports back, and the orchestrator reviews it and issues the next step with any concerns folded in. Workers never pause: genuine ambiguity comes back as a structured `blocked` report, the whole band pauses, and the user is asked. Completed branches merge locally into an integration branch (`band/<PARENT-ID>`) in roadmap order with rebase-on-conflict (capped at 2 rounds). Nothing is pushed until the epic is done and fully verified — then one approval gate, one push, one epic PR.
+`/trc.band` takes a parent Linear issue and fetches its sub-issues. It writes a codebase recon into `specs/.band-runs/<run-id>/recon.md`: a high-level epic spec from `recon-template.md`. The recon holds a dependency roadmap: waves of parallel-safe sub-issues, a complexity rating, and a worker model for each sub-issue.
+
+After the user approves the recon, the band starts background worker agents, up to `band.max_parallel` (default 3). Each worker runs in its own git worktree and runs plan, then implement, **one step at a time**. Every step reports back. The orchestrator reviews the step and issues the next one, with any concerns folded in.
+
+Workers never pause. A real ambiguity comes back as a structured `blocked` report, the whole band pauses, and the band asks the user. Completed branches merge locally into an integration branch (`band/<PARENT-ID>`) in roadmap order, with a rebase on conflict (2 rounds at most). Nothing is pushed until the epic is done and fully verified. Then there is one approval gate, one push and one epic PR.
 
 ### Audit
 
@@ -87,106 +119,63 @@ Two commands run the workflow across multiple tickets instead of one:
 
 Reports are saved to `docs/audits/audit-YYYY-MM-DD-<summary>.md`. Configured output skills (e.g., `linear-audit`) can route findings to external systems like Linear.
 
-## Blocks & Steps
+## Blocks
 
-Each workflow step's behavior is composed from **blocks** — pluggable partial system prompts. Blocks let you customize what each step does without editing command files.
-
-### How It Works
-
-1. Block files live in `core/blocks/{step}/` — each is a markdown file with YAML frontmatter
-2. `tricycle assemble` reads your chain + block config and generates command files
-3. Claude Code reads the assembled command files (static, zero runtime overhead)
+Each command is assembled from **blocks**: markdown files with YAML frontmatter whose bodies are prompt text. `tricycle assemble` (also run by `tricycle update`) writes `.claude/commands/trc.plan.md` and `trc.implement.md` from them.
 
 ### Block Inventory
 
-**Specify** (5 default blocks):
+**Plan:**
 
 | Block | Order | Required | Description |
 |-------|-------|----------|-------------|
-| `feature-setup` | 10 | yes | Create feature branch via `create-new-feature.sh` |
-| `chain-validation` | 20 | yes | Validate step is in configured chain |
-| `input-validation` | 30 | yes | Validate prompt detail for chain length |
-| `spec-writer` | 40 | no | Generate spec content (scenarios, requirements, criteria) |
-| `quality-validation` | 50 | no | Quality checklist and validation loop |
+| `resolve-input` | 10 | yes | New work, or an existing spec to revalidate |
+| `plan-mode` | 15 | no | Enter Claude Code plan mode unless the work is trivial |
+| `graphify-context` | 25 | no | Graphify briefing (runtime gate) |
+| `research` | 30 | yes | Ground the spec in the code and the rules |
+| `write-spec` | 40 | yes | Fill the spec template |
+| `validate` | 50 | yes | Validator loop: fix, ask, revalidate |
+| `store-spec` | 60 | yes | Write to the repo or the tracker |
 
-**Plan** (7 default blocks):
-
-| Block | Order | Required | Description |
-|-------|-------|----------|-------------|
-| `chain-validation` | 10 | yes | Validate step is in configured chain |
-| `setup-context` | 20 | yes | Run setup script, load spec + constitution |
-| `constitution-check` | 30 | no | Constitution compliance gate |
-| `research` | 40 | no | Phase 0: research unknowns, generate `research.md` |
-| `design-contracts` | 50 | no | Phase 1: data model, contracts, quickstart |
-| `agent-context` | 60 | no | Update AI agent context files |
-| `version-awareness` | 70 | no | Version bump planning |
-
-**Tasks** (4 default blocks):
+**Implement:**
 
 | Block | Order | Required | Description |
 |-------|-------|----------|-------------|
-| `chain-validation` | 10 | yes | Validate step is in configured chain |
-| `prerequisites` | 20 | yes | Validate feature directory and docs |
-| `task-generation` | 30 | no | Generate tasks organized by user story |
-| `dependency-graph` | 40 | no | Dependency ordering and parallel markers |
-
-**Implement** (7 default blocks):
-
-| Block | Order | Required | Description |
-|-------|-------|----------|-------------|
-| `chain-validation` | 10 | yes | Validate step is in configured chain |
-| `prerequisites` | 20 | yes | Pre-execution checks |
-| `checklist-validation` | 30 | no | Gate on incomplete checklists |
-| `project-setup` | 40 | no | Verify/create ignore files per tech stack |
-| `task-execution` | 50 | no | Execute tasks phase by phase with TDD |
-| `version-bump` | 60 | no | Bump VERSION after completion |
-| `push-deploy` | 65 | no | Push, create PR, merge, and artifact cleanup |
+| `load-spec` | 10 | yes | Load the spec named by the input |
+| `validate-gate` | 15 | yes | Refuse to start on a failing spec |
+| `graphify-context` | 25 | no | Graphify briefing (runtime gate) |
+| `execute` | 30 | yes | Work the checklist, proving each item |
+| `test` | 40 | yes | Configured lint and test until green |
+| `version-bump` | 60 | no | Bump VERSION |
+| `push-deploy` | 65 | no | Push, PR, merge |
 
 ### Optional Blocks
 
-Not enabled by default — opt in via config:
-
-| Block | Step | Order | Description |
-|-------|------|-------|-------------|
-| `worktree-setup` | specify | 5 | Create git worktree before spec work |
-| `catholic` | specify | 8 | Prayer and blessing wrapper for non-code artifacts |
-| `test-local-stack` | implement | 45 | Test against local infrastructure |
-| `worktree-cleanup` | implement | 70 | Suggest worktree cleanup after merge |
+| Block | Step | Order | Enabled by |
+|-------|------|-------|------------|
+| `catholic` | plan | 1 | `workflow.blocks.plan.enable` |
+| `worktree-setup` | implement | 20 | `worktree.enabled: true` |
+| `test-local-stack` | implement | 45 | `workflow.blocks.implement.enable` |
+| `qa-testing` | implement | 55 | `qa.enabled: true` |
+| `worktree-cleanup` | implement | 70 | `worktree.enabled: true` |
 
 ### Customizing Blocks
 
 ```yaml
 # tricycle.config.yml
 workflow:
-  chain: [specify, plan, tasks, implement]
   blocks:
     plan:
       disable:
-        - design-contracts      # skip contract generation
+        - plan-mode             # required blocks cannot be disabled
     implement:
       enable:
-        - test-local-stack      # add local stack testing
+        - test-local-stack
       custom:
         - .trc/blocks/custom/security-review.md  # your own block
-    specify:
-      enable:
-        - worktree-setup        # worktree-cleanup auto-enabled via companion
 ```
 
-After changing config, run `tricycle assemble` to regenerate command files.
-
-### Companion Blocks
-
-Some blocks are paired — enabling one auto-enables its companion. For example, enabling `worktree-setup` in specify automatically enables `worktree-cleanup` in implement. Declared via the `companions` frontmatter field.
-
-### Chain Absorption
-
-When steps are omitted from the chain, their blocks merge into the preceding step:
-
-- `[specify, plan, implement]` — tasks blocks (task-generation, dependency-graph) absorbed into plan
-- `[specify, implement]` — plan blocks + tasks blocks absorbed into specify
-
-The AI doesn't know about absorption — it just follows the assembled prompt which includes the absorbed instructions.
+After changing config, run `tricycle assemble` to regenerate the command files.
 
 ### Creating Your Own Blocks
 
@@ -236,7 +225,7 @@ workflow:
 tricycle assemble
 ```
 
-Your block is now part of the implement step, ordered at 55 (between task-execution and version-bump).
+Your block is now part of the implement command, at order 55: after `test` (40) and before `version-bump` (60).
 
 ### Block Authoring Guide
 
@@ -245,18 +234,17 @@ Your block is now part of the implement step, ordered at 55 (between task-execut
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | yes | Unique identifier (kebab-case) |
-| `step` | yes | Which workflow step: `specify`, `plan`, `tasks`, or `implement` |
+| `step` | yes | Which command: `plan` or `implement` |
 | `description` | yes | One-line summary |
 | `required` | yes | `true` blocks cannot be disabled |
 | `default_enabled` | yes | `true` = active without config, `false` = opt-in |
 | `order` | yes | Execution order within the step (lower = earlier) |
-| `companions` | no | Auto-enable another block, e.g. `implement:my-cleanup` |
 
 **Writing the body:**
 
 - Write in imperative voice ("Read the config", "Check for conflicts")
 - Use numbered steps for sequential actions
-- Use `**HALT**` or `**STOP**` for gates where the agent must wait
+- Use `**STOP**` for gates where the agent must wait
 - Reference config values by their `tricycle.config.yml` path (e.g., `push.pr_target`)
 - The agent sees the assembled markdown — it has no runtime, no variables, no templating. Everything is a prompt instruction.
 
@@ -278,19 +266,19 @@ Built a block that others might find useful? We accept contributions to `core/bl
 1. Place the block in `core/blocks/optional/{step}/your-block.md`
 2. Set `default_enabled: false` (opt-in only)
 3. Add a row to the Optional Blocks table in this README
-4. Add test coverage in `tests/run-tests.sh` (block file exists) and `tests/test-block-assembly.js` (assembles correctly when enabled)
+4. Add test coverage in `tests/test-assemble-commands.sh`: the block appears, in order, when enabled
 5. Open a PR
 
 Blocks in `core/blocks/optional/` ship with the toolkit but are inactive unless enabled in config. This keeps the default workflow lean while making community blocks discoverable.
 
 ### Catholic Block & Skill
 
-Tricycle Pro ships with an optional **catholic** block and skill that infuse non-code artifacts with reverent, faith-inspired Christian verbiage — blessings, gratitude, and references to divine guidance.
+Tricycle Pro ships an optional **catholic** block and skill. They add reverent Christian wording to non-code artifacts: blessings, gratitude, and references to divine guidance.
 
 **What it does**:
-- The **catholic skill** (`/catholic`) guides Claude to use reverent language in specs, plans, tasks, and READMEs
-- The **catholic block** fires at the start of the specify step with a prayer for the feature's success and closes with a blessing
-- Source code, tests, and config files are never affected
+- The **catholic skill** (`/catholic`) guides Claude to use reverent language in specs and READMEs.
+- The **catholic block** opens the plan command with a prayer for the feature's success and closes it with a blessing.
+- Source code, tests and config files are never affected.
 
 **Enable it**:
 
@@ -298,20 +286,16 @@ Tricycle Pro ships with an optional **catholic** block and skill that infuse non
 # tricycle.config.yml
 workflow:
   blocks:
-    specify:
+    plan:
       enable:
-        - catholic
-      skills:
         - catholic
 ```
 
-Then run `tricycle assemble` to rebuild commands.
-
-**Disable it**: Remove `catholic` from the `enable` and `skills` lists, then `tricycle assemble`.
+Then run `tricycle assemble` to rebuild the commands. To turn it off, remove `catholic` from the list and run `tricycle assemble` again.
 
 ## Skills
 
-Skills are pluggable prompt modules that provide specialized capabilities during workflow steps. They are installed to `.claude/skills/` and invoked conditionally — if a skill isn't installed, it's silently skipped.
+Skills are prompt modules in `.claude/skills/`. Claude Code reads each skill's description and invokes the skill when the work fits it. `skills.disable` in `tricycle.config.yml` keeps a core skill from being installed.
 
 | Skill | Description |
 |-------|-------------|
@@ -319,25 +303,9 @@ Skills are pluggable prompt modules that provide specialized capabilities during
 | `code-reviewer` | Structured PR review: correctness, security, performance, maintainability |
 | `debugging` | Reproduce-isolate-trace-fix-verify debugging workflow |
 | `document-writer` | Generate DOCX, PDF, PPTX, and other formatted documents |
-| `linear-audit` | Route audit findings to Linear as issues |
+| `linear-audit` | Route audit findings to Linear as issues (`/trc.audit --linear`) |
+| `ste-short` | Short ASD-STE100 rules for persisted prose |
 | `tdd` | Red-Green-Refactor test-driven development workflow |
-
-Configure skills per workflow step:
-
-```yaml
-# tricycle.config.yml
-workflow:
-  blocks:
-    implement:
-      skills:
-        - code-reviewer
-        - tdd
-    specify:
-      skills:
-        - document-writer
-```
-
-Then run `tricycle assemble` to regenerate commands.
 
 ## SessionStart Hook
 
@@ -361,13 +329,29 @@ Run `tricycle generate settings` to wire up the hook. It writes `.claude/hooks/.
 tricycle init [--preset <name>]     # Initialize project
 tricycle add <module>               # Add module (worktree, qa, ci-watch, mcp, memory)
 tricycle assemble [--dry-run]       # Assemble commands from blocks
-tricycle generate <target>          # Generate files (claude-md, settings, mcp)
+tricycle generate <target>          # Generate files (claude-md, settings, mcp, gitignore)
 tricycle skills list                # List installed skills and their status
-tricycle update [--dry-run]         # Update core files
+tricycle status [<spec id>] [--json]  # Spec status and checklist progress
+tricycle update [--dry-run]         # Overwrite core files, remove dropped ones, re-assemble
+tricycle dogfood [--yes]            # Mirror core/ into this repo (tricycle-pro only)
 tricycle update-self                # Update CLI itself
 tricycle validate                   # Validate configuration
 tricycle graphify <sub>             # Manage optional graphify integration
 ```
+
+## Generated Files Are Never Hand-Edited
+
+Every file below is an output. A hand edit to one is discarded the next time its command runs. Make every change in the source column, then regenerate.
+
+| Output | Written by | Change it in |
+|--------|-----------|--------------|
+| `.claude/settings.json` | `tricycle generate settings` | `tricycle.config.yml` |
+| `.mcp.json` | `tricycle generate mcp` | `tricycle.config.yml` |
+| `CLAUDE.md` | `tricycle generate claude-md` | `tricycle.config.yml`, `generators/sections/` |
+| `.claude/commands/trc.*.md` | `tricycle assemble` (also run by `update`) | custom blocks in `.trc/blocks/custom/`, `workflow.blocks` in `tricycle.config.yml` |
+| Core copies in `.trc/`, `.claude/hooks/`, `.claude/skills/` | `tricycle update` | upstream `core/` in tricycle-pro |
+
+`tricycle update` overwrites every core copy that differs from core and removes the copies core no longer ships. A repo-specific need goes into the config, a custom block, or a repo-owned hook script, never into a core copy or an output.
 
 ## Configuration
 
@@ -387,14 +371,16 @@ apps:
     lint: "npm run lint"
     test: "npm test"
 
+spec:
+  store: repo                     # repo | linear
+  dir: docs/specs
+
 workflow:
-  chain: [specify, plan, tasks, implement]
   blocks:
-    # per-step overrides (see Blocks & Steps)
+    # per-command overrides (see Blocks)
 
 worktree:
   enabled: false
-  path_pattern: "../{project}-{branch}"
 
 band:
   max_parallel: 3                 # /trc.band: max concurrent sub-issue workers (1-8)
@@ -413,7 +399,27 @@ context:
   session_start:
     constitution: true            # inject constitution on session start (default)
     files: []                     # additional files to inject
+
+claude:                           # sources for .claude/settings.json
+  disable_core_hooks:             # trc core hooks to leave out (not registered, not installed)
+    - rename-on-kickoff
+  permissions:
+    allow:
+      - "Bash(make:*)"            # appended to the generated allow list
+  hooks:                          # repo hooks, registered after trc's own
+    - event: PreToolUse
+      matcher: Bash
+      command: $CLAUDE_PROJECT_DIR/.claude/hooks/guard-db.sh
+      timeout: 10                 # optional
 ```
+
+```yaml
+style:                            # optional; each part works only when its plugin is installed
+  chat: ultracave                 # caveman plugin default mode, written to .caveman.json
+  artifacts: ste-short            # registers style-gate: persisted prose must pass the asd-ste100 linter
+```
+
+Core hooks: `guard-main-checkout` (when `worktree.enabled`), `rename-on-kickoff`, `graphify-refresh-on-kickoff`, `session-context`, `style-gate` (when `style.artifacts: ste-short`). Repo hook scripts live in `.claude/hooks/` next to them. `tricycle update` never touches a file that core does not ship.
 
 ## Local Config Overrides
 
@@ -453,7 +459,7 @@ The session-context hook detects `.trc/local/commands/` and instructs Claude to 
 |--------|-------------|
 | `push.` | `push.require_approval`, `push.require_tests` |
 | `qa.` | `qa.enabled`, `qa.suites` |
-| `worktree.` | `worktree.enabled`, `worktree.path_pattern` |
+| `worktree.` | `worktree.enabled`, `worktree.env_copy` |
 | `workflow.blocks.` | `workflow.blocks.implement.enable` |
 | `stealth.` | `stealth.enabled` |
 
@@ -497,32 +503,33 @@ tricycle add <module>
 skill + PyPI package (`graphifyy`) that builds a persistent, queryable knowledge
 graph of your repo. When enabled, tricycle:
 
-1. **Refreshes the graph automatically** at every `/trc.specify`, `/trc.chain`,
-   or `/trc.headless` kickoff (fire-and-forget, cached — no-op is cheap when
+1. **Refreshes the graph automatically** at every `/trc.plan`, `/trc.implement`, `/trc.chain`,
+   or `/trc.band` kickoff (fire-and-forget, cached — no-op is cheap when
    nothing changed).
-2. **Registers a per-chain MCP entry** in `.mcp.json` at `/trc.chain` start,
-   so worker sub-agents' Claude Code hosts spawn the graphify MCP stdio
-   server on demand and workers can query architectural context via tools
-   instead of re-reading the tree.
-3. **Pipes graph context into every worker's brief** — GRAPH_REPORT.md excerpt,
-   MCP PID, guidance on when to query vs skip.
+2. **Briefs the agent.** The plan and implement commands carry a Graphify Context
+   block. It tells the agent to query the graph before a wide search, through the
+   `graphify` CLI or through MCP tools after `tricycle graphify mcp-start`.
 
-All disabled by default. **Zero impact on upgrade** — when the flag is off, the
-hook is a silent no-op and the chain integration is skipped entirely.
+All disabled by default. When the flag is off, the hook is a silent no-op and
+the Graphify Context block tells the agent to skip the graph.
 
 ### Language support
 
-Graphify's AST extractor covers Python, JS, TS, Go, Rust, Java, C, C++, Ruby,
-C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C,
-Julia, Verilog, SystemVerilog, Vue, Svelte, and Dart. Bash, shell, YAML, and
-markdown are **not** extracted by the CLI-side build (`tricycle graphify
-bootstrap` / kickoff refresh). For shell-heavy repos the auto-built graph will
-be thin — e.g. on a mostly-Bash toolkit the CLI produced 53 nodes, all from
-the handful of JS test files. The richer, LLM-enriched build — which extracts
-concepts from docs, papers, images, and arbitrary-language code — is the
-skill-side `/graphify .` you run inside your AI assistant, not the CLI. Treat
-the CLI bootstrap as the "code-structure floor"; run the skill form for fuller
-context.
+Graphify's AST extractor covers these languages:
+
+- Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP.
+- Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia, Verilog,
+  SystemVerilog, Vue, Svelte, Dart.
+
+The CLI-side build (`tricycle graphify bootstrap` and the kickoff refresh) does
+**not** extract Bash, shell, YAML or Markdown. For shell-heavy repos, the
+auto-built graph is thin. On a mostly-Bash toolkit, the CLI produced 53 nodes,
+all from the few JS test files.
+
+The richer build is the skill-side `/graphify .` that you run inside your AI
+assistant. It uses an LLM to extract concepts from docs, papers, images and
+code in any language. Treat the CLI bootstrap as the code-structure floor, and
+run the skill form for fuller context.
 
 ### Quickstart
 
@@ -545,7 +552,6 @@ integrations:
     auto_install: false       # let the hook `pip install graphifyy` if missing
     auto_bootstrap: false     # let the hook run first-time `graphify .`
     refresh_on_kickoff: true  # async `graphify . --update` at every kickoff
-    mcp_per_chain: true       # spawn `graphify --mcp` per `/trc.chain` run
 ```
 
 ### Commands
@@ -571,7 +577,7 @@ tricycle graphify mcp-stop  [--run-id X]   # unregister graphify from .mcp.json
   has a `graphify` entry. Your Claude Code host spawns the stdio server
   on demand when workers first call a graphify tool.
 - **Stale graph after bulk code changes** — run `tricycle graphify refresh`
-  manually; don't trust nodes after you've rewritten large swaths of the tree.
+  manually. Do not trust nodes after you rewrite large parts of the tree.
 - **macOS Homebrew Python** — `install` falls back to
   `--break-system-packages`. If you'd rather keep the system Python clean,
   install graphify into a venv and put its `graphify` shim on your PATH
@@ -585,27 +591,26 @@ tricycle-pro/
 │   ├── tricycle              # CLI entry point
 │   └── lib/                  # CLI libraries (yaml, json, helpers, templates, assembly)
 ├── core/
-│   ├── blocks/               # Block source files (the "what each step does")
-│   │   ├── specify/          # 5 blocks
-│   │   ├── plan/             # 7 blocks
-│   │   ├── tasks/            # 4 blocks
-│   │   ├── implement/        # 7 blocks
-│   │   └── optional/         # Opt-in blocks (worktree, catholic, test-local-stack)
-│   ├── commands/             # Assembled command files (generated by tricycle assemble)
+│   ├── agents/               # Subagents (trc-spec-validator)
+│   ├── blocks/               # Block source files
+│   │   ├── plan/             # /trc.plan blocks
+│   │   ├── implement/        # /trc.implement blocks
+│   │   └── optional/         # Opt-in blocks (catholic, worktree, qa, local stack)
+│   ├── commands/             # Commands (plan and implement are assembled from blocks)
 │   ├── hooks/                # Enforcement hooks (lint gate, branch protection, session context)
 │   ├── scripts/bash/         # Shared scripts (common.sh, assembly, feature creation)
 │   ├── skills/               # Skill modules (catholic, code-reviewer, debugging, etc.)
-│   └── templates/            # Spec, plan, tasks, checklist templates
+│   └── templates/            # Spec, constitution and recon templates
 ├── modules/                  # Optional modules (worktree, qa, ci-watch, mcp, memory)
 ├── presets/                  # Starter configs (single-app, nextjs-prisma, etc.)
 ├── generators/               # CLAUDE.md section templates
-├── docs/                     # Workflow guide
+├── docs/                     # Audit reports, retired designs
 └── specs/                    # Dogfooding artifacts (see below)
 ```
 
 ## Dogfooding
 
-Tricycle Pro is built with itself. Every feature goes through the same `/specify → /plan → /tasks → /implement` chain that ships to users. The `specs/` directory contains the real artifacts:
+Tricycle Pro is built with itself. The `specs/` directory holds the artifacts of the earlier four-step workflow, kept as history:
 
 **[`001-headless-mode`](specs/001-headless-mode/)** — Added `/trc.headless` for single-command workflow execution. JavaScript/Node.js implementation with `node:test`. Full artifact set: spec, plan, research, data model, contracts, tasks, checklist.
 
@@ -613,20 +618,8 @@ Tricycle Pro is built with itself. Every feature goes through the same `/specify
 
 **[`003-workflow-chains-blocks`](specs/003-workflow-chains-blocks/)** — The blocks and chains system itself. Decomposed all commands into 22 pluggable blocks, added configurable workflow chains, build-time assembly, and companion blocks.
 
-Browse `specs/` for additional feature artifacts (skills system, audit command, session hooks, and more).
+Browse `specs/` for more history: the skills system, the audit command, session hooks and others. Release 1.0 removed `/trc.headless`, configurable chains and companion blocks.
 
-This means:
-
-- **Templates are battle-tested.** Every template has been used to build real features.
-- **Hooks catch real problems.** The lint/test gate and push approval hooks run on every contribution.
-- **The workflow scales.** A single-command feature and a full architecture rewrite both flow through the same pipeline.
-- **Blocks are proven.** The block decomposition was done on the toolkit's own commands — they're not theoretical.
-
-Browse `specs/` to see what the workflow produces in practice.
-
-## Documentation
-
-Full workflow guide: **[AI-Assisted Development: A Spec-Driven Workflow](docs/ai-development-workflow.md)**
 
 ## License
 

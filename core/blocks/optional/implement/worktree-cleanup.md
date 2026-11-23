@@ -1,7 +1,7 @@
 ---
 name: worktree-cleanup
 step: implement
-description: Automatically clean up worktree, prune references, and delete feature branch after confirmed PR merge
+description: Automatically clean up worktree, prune references, and delete feature branch after a checked PR merge
 required: false
 default_enabled: false
 order: 70
@@ -9,9 +9,9 @@ order: 70
 
 ## Worktree Cleanup
 
-After the push-deploy block has confirmed the PR is merged, automatically clean up the worktree.
+After the push-deploy block checks that the PR is merged, automatically clean up the worktree.
 
-**Prerequisites**: The PR MUST be confirmed merged before this block executes. If the merge has not happened, skip this block entirely.
+**Prerequisites**: The PR MUST be merged, and checked, before this block executes. If the merge has not happened, skip this block entirely.
 
 ### Detection
 
@@ -36,7 +36,11 @@ Execute these steps in order. If any step fails, report the error and fall back 
    - Branch name: `git rev-parse --abbrev-ref HEAD`
    - Main checkout path: run `git worktree list --porcelain`, take the first `worktree` line (this is always the main checkout)
 
-2. **Switch working context** to the main checkout directory. All subsequent commands run from there.
+2. **Switch working context** to the main checkout directory. All subsequent commands run from there. A worktree cannot delete itself.
+
+   **Project cleanup script**: the project can have a worktree cleanup script, for example in `scripts/` or named in `qa/ai-agent-instructions.md`. If it has one, do step 3. Then run the script from the main checkout with the branch name, in place of steps 4 to 6. Such a script also deletes the resources of the worktree, for example its database and containers. Then go to step 7.
+
+   **Worktree resources**: if there is no script and the worktree has its own resources (a database, containers), delete them before step 4.
 
 3. **Fetch latest** to ensure the main branch is up to date:
    ```
@@ -45,7 +49,7 @@ Execute these steps in order. If any step fails, report the error and fall back 
    ```
    Where `<base-branch>` is `push.pr_target` from `tricycle.config.yml` (default: `main`).
 
-4. **Remove the worktree**:
+4. **Delete the worktree**:
    ```
    git worktree remove <worktree-path>
    ```

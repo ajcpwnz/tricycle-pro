@@ -47,8 +47,11 @@ parse_yaml() {
       depth = depth + 1
     }
 
-    # Find first colon
+    # Find first colon. A quoted array item is one scalar even when it holds
+    # a colon ("Bash(make:*)").
     colon = index(line, ":")
+    q1 = substr(line, 1, 1)
+    if (is_arr && (q1 == "\"" || q1 == "\047")) colon = 0
     if (colon > 0) {
       k = substr(line, 1, colon - 1)
       rest = substr(line, colon + 1)
@@ -99,7 +102,7 @@ parse_yaml() {
         }
       }
       # Strip quotes
-      if (substr(line, 1, 1) == "\"" && substr(line, length(line), 1) == "\"") {
+      if ((q1 == "\"" || q1 == "\047") && substr(line, length(line), 1) == q1) {
         line = substr(line, 2, length(line) - 2)
       }
       print path "=" line

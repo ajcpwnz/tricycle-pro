@@ -188,7 +188,9 @@ project:
 YAML
 # Minimal template so the script can copy it.
 printf '# Spec\n' > "$nogit/.trc/templates/spec-template.md"
-out=$(cd "$nogit" && bash "$CREATE" "nogit test" --style feature-name --short-name "nogit-test" --json 2>&1 1>/dev/null || true)
+mkdir -p "$nogit/.trc/scripts/bash"
+cp "$REPO_ROOT"/core/scripts/bash/*.sh "$nogit/.trc/scripts/bash/"
+out=$(cd "$nogit" && bash "$nogit/.trc/scripts/bash/create-new-feature.sh" "nogit test" --style feature-name --short-name "nogit-test" --json 2>&1 1>/dev/null || true)
 if printf '%s' "$out" | grep -q 'fast-forwarded\|origin unreachable'; then
     echo "FAIL [h]: non-git repo should be silent; got: $out"; exit 1
 fi

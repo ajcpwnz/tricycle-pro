@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Covers the update auto-discovery fix from the April-17 bugfix batch:
-# `tricycle update` must not silently drop files that exist in the consumer
-# tree but are not in the lock (the pre-fix silent-drop bug that let
-# trc.chain.md / chain-run.sh stay pinned to a pre-TRI-30 version).
+# `tricycle update` treats every core copy as an output:
+#   - a file missing locally is added;
+#   - a file present but untracked and identical to core is adopted;
+#   - a file that differs from core, tracked or not, is overwritten;
+#   - a tracked file whose core source is gone is removed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,6 +22,7 @@ mkdir -p "$TOOLKIT/bin/lib" "$TOOLKIT/core/commands" "$TOOLKIT/core/templates" \
 
 cp "$REPO_ROOT/bin/tricycle" "$TOOLKIT/bin/tricycle"
 cp "$REPO_ROOT/bin/lib/"*.sh "$TOOLKIT/bin/lib/"
+cp "$REPO_ROOT/core/scripts/bash/assemble-commands.sh" "$REPO_ROOT/core/scripts/bash/common.sh" "$TOOLKIT/core/scripts/bash/"
 printf '0.1.0\n' > "$TOOLKIT/VERSION"
 
 # Stable source files the consumer should receive.
@@ -83,17 +85,32 @@ grep -q '"\.claude/commands/trc\.chain\.md"' "$CONSUMER/.tricycle.lock" \
 grep -q '"\.trc/scripts/bash/chain-run\.sh"' "$CONSUMER/.tricycle.lock" \
   || { echo "FAIL: chain-run.sh not recorded in lock"; cat "$CONSUMER/.tricycle.lock"; exit 1; }
 
-# Case D: unmanaged file that DIFFERS from core → skipped, recorded as customized.
+# Case D: unmanaged file that DIFFERS from core → overwritten and tracked.
 printf 'user hand-edit\n' > "$CONSUMER/.claude/commands/trc.userfork.md"
 printf 'upstream version\n' > "$TOOLKIT/core/commands/trc.userfork.md"
-OUTPUT2=$("$TOOLKIT/bin/tricycle" update 2>&1)
-echo "$OUTPUT2" | grep -q 'SKIP .claude/commands/trc.userfork.md' \
-  || { echo "FAIL: unmanaged/modified file not surfaced as SKIP"; echo "$OUTPUT2"; exit 1; }
-grep -q '"customized": true' "$CONSUMER/.tricycle.lock" \
-  || { echo "FAIL: customized flag not recorded"; cat "$CONSUMER/.tricycle.lock"; exit 1; }
+"$TOOLKIT/bin/tricycle" update >/dev/null 2>&1
+grep -q '^upstream version$' "$CONSUMER/.claude/commands/trc.userfork.md" \
+  || { echo "FAIL: unmanaged hand edit survived update"; exit 1; }
+grep -q '"\.claude/commands/trc\.userfork\.md"' "$CONSUMER/.tricycle.lock" \
+  || { echo "FAIL: overwritten file not tracked in lock"; cat "$CONSUMER/.tricycle.lock"; exit 1; }
 
-# Ensure the user's content was NOT overwritten.
-grep -q '^user hand-edit$' "$CONSUMER/.claude/commands/trc.userfork.md" \
-  || { echo "FAIL: user file overwritten"; exit 1; }
+# Case E: tracked file edited locally → overwritten.
+printf 'local tweak\n' > "$CONSUMER/.claude/commands/trc.existing.md"
+"$TOOLKIT/bin/tricycle" update >/dev/null 2>&1
+grep -q '^already present and clean$' "$CONSUMER/.claude/commands/trc.existing.md" \
+  || { echo "FAIL: tracked hand edit survived update"; exit 1; }
+
+# Case F: core drops a file → the consumer copy and its lock entry go.
+rm "$TOOLKIT/core/scripts/bash/chain-run.sh"
+OUT=$("$TOOLKIT/bin/tricycle" update 2>&1)
+echo "$OUT" | grep -q 'REMOVE .trc/scripts/bash/chain-run.sh' \
+  || { echo "FAIL: dropped core file not reported as REMOVE"; echo "$OUT"; exit 1; }
+[ ! -e "$CONSUMER/.trc/scripts/bash/chain-run.sh" ] || { echo "FAIL: dropped core file still on disk"; exit 1; }
+! grep -q 'chain-run\.sh' "$CONSUMER/.tricycle.lock" || { echo "FAIL: dropped core file still in lock"; exit 1; }
+
+# A file the repo owns (never shipped by core) is never touched.
+printf 'repo hook\n' > "$CONSUMER/.claude/hooks/repo-own.sh"
+"$TOOLKIT/bin/tricycle" update >/dev/null 2>&1
+grep -q '^repo hook$' "$CONSUMER/.claude/hooks/repo-own.sh" || { echo "FAIL: repo-owned file touched"; exit 1; }
 
 echo "tricycle-update-adopt: OK"

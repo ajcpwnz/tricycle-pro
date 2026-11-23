@@ -20,7 +20,7 @@ ISSUES='[
 ]'
 
 INIT=$(bash "$BAND" init --parent TRI-9199 --issues "$ISSUES" --recon "$RECON" \
-    --chain '["specify","plan","implement"]' --max-parallel 2)
+    --max-parallel 2)
 rm -f "$RECON"
 RID=$(echo "$INIT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])')
 [ -n "$RID" ] || { echo "no run_id in init output" >&2; exit 1; }
@@ -41,7 +41,7 @@ assert d["slots"] == 2
 walk_issue() {
     local iid="$1" sha="$2" msha="$3"
     local step
-    for step in specify plan implement; do
+    for step in plan implement; do
         bash "$BAND" update-step --run-id "$RID" --issue "$iid" --step "$step" --step-status running >/dev/null
         # Worker writes a progress event at step end (orchestrator contract).
         printf '{"phase":"%s_complete","issue_id":"%s"}\n' "$step" "$iid" \
@@ -95,7 +95,7 @@ assert s["integration"]["pr_url"] == "https://example.com/pr/9"
 assert s["integration"]["pushed_at"]
 for iid, t in s["issues"].items():
     assert t["status"] == "completed", f"{iid}: {t['status']}"
-    assert t["steps_completed"] == ["specify", "plan", "implement"]
+    assert t["steps_completed"] == ["plan", "implement"]
 '
 
 # Progress files removed by close.

@@ -21,22 +21,10 @@ check() {
   done
 }
 
-check "$REPO_ROOT/core/commands/trc.specify.md" \
-  "session-rename section"        "Session Rename (Fallback)" \
-  "derive-branch-name invocation" "derive-branch-name.sh" \
-  "rename instruction"            "/rename" \
-  "ordering mandate"              "before the"
-
 check "$REPO_ROOT/core/commands/trc.chain.md" \
   "orchestrator rename section"   "Session Rename (Fallback)" \
   "chain-scoped prefix"           "trc-chain-" \
   "worker brief rename rule"      "First action:" \
   "rename instruction"            "/rename"
-
-check "$REPO_ROOT/core/commands/trc.headless.md" \
-  "headless rename section"       "Session Rename (Fallback)" \
-  "derive-branch-name invocation" "derive-branch-name.sh" \
-  "rename instruction"            "/rename" \
-  "headless still routes through /trc.specify (TRI-32 refresh depends on this)" "/trc.specify"
 
 echo "command-rename-fallback: OK"

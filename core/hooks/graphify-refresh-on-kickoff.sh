@@ -1,6 +1,6 @@
 #!/bin/bash
 # UserPromptSubmit hook — optional graphify integration.
-# Fires on /trc.specify, /trc.chain, and /trc.headless kickoffs and runs
+# Fires on /trc.plan, /trc.implement, /trc.chain and /trc.band kickoffs and runs
 # `graphify . --update` in the background so workers see a fresh graph.
 #
 # Every gate below is a silent early exit so downstream repos that never
@@ -22,7 +22,7 @@ PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty' 2>/dev/null)
 # Gate 1 — only act on kickoff commands. Mirror rename-on-kickoff.sh.
 TRIMMED="${PROMPT#"${PROMPT%%[![:space:]]*}"}"
 case "$TRIMMED" in
-    /trc.specify*|/trc.headless*|/trc.chain*|/trc.band*) ;;
+    /trc.plan*|/trc.implement*|/trc.chain*|/trc.band*) ;;
     *) exit 0 ;;
 esac
 

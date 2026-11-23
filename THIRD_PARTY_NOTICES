@@ -1,4 +1,6 @@
-Tricycle Pro includes patterns and templates derived from Spec Kit.
+Tricycle Pro includes code and templates derived from Spec Kit:
+core/scripts/bash/common.sh, core/scripts/bash/create-new-feature.sh,
+core/scripts/bash/derive-branch-name.sh and core/templates/constitution-template.md.
 
 Spec Kit
 https://github.com/github/spec-kit

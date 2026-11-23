@@ -11,7 +11,7 @@ Provides preset configurations for Model Context Protocol (MCP) servers.
 ## Installation
 
 ```bash
-npx tricycle-pro add mcp
+tricycle add mcp
 ```
 
 Note: The MCP module is primarily consumed by `tricycle generate mcp`, which reads the preset
@@ -33,7 +33,7 @@ mcp:
 ## Usage
 
 ```bash
-npx tricycle-pro generate mcp   # Generates .mcp.json from config
+tricycle generate mcp   # Generates .mcp.json from config
 ```
 
 The generated `.mcp.json` is gitignored by default. Each worktree inherits MCP configuration

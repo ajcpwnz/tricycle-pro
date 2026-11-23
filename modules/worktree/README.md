@@ -4,7 +4,6 @@ Provides git worktree isolation for parallel feature development.
 
 ## What it includes
 
-- **hooks/worktree-on-specify.sh** — Enforces worktree creation before `/trc.specify`
 - **scripts/cleanup-worktree.sh** — Remove worktrees and their per-branch databases
 - **scripts/worktree-db-setup.sh** — Create per-worktree database and copy .env files
 - **adapters/** — Database-specific isolation logic (postgres, mysql, sqlite)
@@ -16,8 +15,6 @@ In `tricycle.config.yml`:
 ```yaml
 worktree:
   enabled: true
-  path_pattern: "../{project}-{branch}"   # Where worktrees are created
-  db_isolation: true                       # Per-branch databases
   env_copy:                                # .env files to copy from main checkout
     - apps/backend/.env
     - apps/frontend/.env
@@ -34,8 +31,6 @@ Supported: `postgres`, `mysql`, `sqlite`
 
 ## How it works
 
-1. When you run `/trc.specify`, the `worktree-on-specify.sh` hook detects you're in the main checkout
-2. It creates a new worktree at the configured path pattern
-3. You `cd` into the worktree, run package install, and set up the database
-4. Each worktree gets its own database (named from the branch) so migrations don't conflict
-5. After merging, `cleanup-worktree.sh` removes the worktree directory, database, and branch
+1. With `worktree.enabled: true`, `/trc.implement` creates a worktree beside the main checkout before it starts work, installs dependencies and runs `setup_script`
+2. Each worktree gets its own database (named from the branch) so migrations don't conflict
+3. After merging, `cleanup-worktree.sh` removes the worktree directory, database, and branch

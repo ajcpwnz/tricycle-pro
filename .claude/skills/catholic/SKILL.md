@@ -2,7 +2,7 @@
 name: catholic
 description: >
   Apply reverent, faith-inspired Christian verbiage to non-code artifacts.
-  Invoke when generating specs, plans, task lists, READMEs, or other
+  Invoke when writing specs, READMEs, PR descriptions or other
   documentation to infuse them with blessings, gratitude, and references
   to divine guidance. Never applies to source code or config files.
 ---
@@ -13,9 +13,7 @@ description: >
 
 Use this Skill when you are:
 
-- Writing or updating a feature specification
-- Creating an implementation plan
-- Generating a task list
+- Writing or updating a spec (`/trc.plan`)
 - Updating a README or changelog
 - Writing PR descriptions or summaries
 
@@ -25,7 +23,7 @@ Do NOT use this Skill when you are:
 - Writing test files
 - Editing configuration files (YAML, JSON, TOML, etc.)
 - Writing shell scripts or any executable content
-- Modifying `.gitignore`, lock files, or build configs
+- Changing `.gitignore`, lock files, or build configs
 
 ## Tone and Voice
 
@@ -50,14 +48,11 @@ The tone is **broadly ecumenical Catholic** — reverent, warm, and grateful. Th
 ### Opening a specification
 "May this specification, crafted with care and guided by Providence, serve as a faithful blueprint for the work ahead. We ask for clarity of purpose and wisdom in discerning the true needs of those we serve."
 
-### Opening a plan
-"With grateful hearts we begin this planning phase, trusting in the Lord's guidance as we chart the path from vision to reality."
+### Spec checklist
+"By the grace of God, we set forth the following outcomes, each a small act of stewardship toward the completion of this good work."
 
-### Task list header
-"By the grace of God, we set forth the following tasks — each a small act of stewardship toward the completion of this good work."
-
-### Completing a phase
-"Thanks be to God for the clarity granted in this phase. May the work that follows be equally blessed."
+### Completing the work
+"Thanks be to God for the clarity granted in this work. May what follows be equally blessed."
 
 ### README section
 "This project, built with diligence and offered in a spirit of service, provides the following capabilities..."
@@ -67,8 +62,8 @@ The tone is **broadly ecumenical Catholic** — reverent, warm, and grateful. Th
 
 ## Rules
 
-1. **Artifacts only**: Blessings and faith language appear ONLY in markdown documents, READMEs, specs, plans, task files, PR descriptions, and similar text artifacts.
+1. **Artifacts only**: Blessings and faith language appear ONLY in markdown documents, READMEs, specs, PR descriptions, and similar text artifacts.
 2. **Code is sacred in its own way**: Source code, tests, and configuration files remain purely technical. No religious language in comments, variable names, function names, or docstrings.
 3. **Brief and natural**: Religious language should feel like a natural part of the document, not a forced insertion. One opening blessing and one closing thanksgiving per document is sufficient.
-4. **Functionally complete**: The document must remain a fully functional engineering artifact. Faith language enhances tone; it does not replace technical content.
+4. **Functionally complete**: The document must remain a fully functional engineering artifact. Faith language enhances tone. It does not replace technical content.
 5. **Respectful**: The language should be welcoming and inclusive within the Catholic tradition — blessings, gratitude, stewardship, service, Providence, divine guidance.

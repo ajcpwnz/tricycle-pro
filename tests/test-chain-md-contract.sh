@@ -20,7 +20,9 @@ need() {
 }
 
 # #2 — pre-provisioned worktree handoff
-need "worker sets TRC_PREPROVISIONED_WORKTREE" -F "TRC_PREPROVISIONED_WORKTREE"
+need "worker works in the pre-provisioned worktree" -F "cd '<worktree_path>'"
+need "worker runs plan then implement" -F "Run \`/trc.plan <ticket-id>\`, then \`/trc.implement <ticket-id>\`"
+need "validator PASS is the spec approval" -F "A validator"
 need "worker is told not to re-run worktree setup" -F "DO NOT re-run any worktree-setup"
 
 # #3 — marker path binding

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Contract guard for the graphify integration shipped in v0.22.4+.
-# Every trc flow command (specify, plan, tasks, implement, headless) MUST
+# Every trc flow command (plan, implement) MUST
 # carry exactly one `## Graphify Context` section AND that section MUST
 # gate on the `integrations.graphify.enabled` config flag. The chain skill
 # MUST NOT reference the pre-v0.22.4 `graphify mcp-start` / `mcp-stop`
@@ -8,7 +8,7 @@
 # Agent-spawned workers).
 #
 # Why this exists: v0.22.4 shipped with a stray leftover `## Graphify
-# Orientation (optional)` section in trc.specify.md that contradicted the
+# Orientation (optional)` section in one flow command that contradicted the
 # new gated block. This test rejects that class of drift up front.
 set -euo pipefail
 
@@ -35,7 +35,7 @@ check_flow_cmd() {
     || fail "$f graphify section is missing the integrations.graphify.enabled gate"
 }
 
-for cmd in specify plan tasks implement headless; do
+for cmd in plan implement; do
   check_flow_cmd "$REPO_ROOT/core/commands/trc.$cmd.md"
 done
 

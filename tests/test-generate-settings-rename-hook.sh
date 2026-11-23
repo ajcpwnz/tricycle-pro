@@ -36,7 +36,7 @@ assert isinstance(ups, list) and ups, "UserPromptSubmit array missing or empty"
 first = ups[0]
 inner = first.get("hooks") or []
 cmds = [h.get("command", "") for h in inner]
-assert ".claude/hooks/rename-on-kickoff.sh" in cmds, f"rename-on-kickoff.sh not registered; got {cmds}"
+assert "$CLAUDE_PROJECT_DIR/.claude/hooks/rename-on-kickoff.sh" in cmds, f"rename-on-kickoff.sh not registered; got {cmds}"
 PY
 
 # Ensure the hook file itself ships via `install_dir`. We simulate this by

@@ -11,9 +11,9 @@
 #    different content without updating the lock — so every skill SOURCE
 #    was permanently "locally modified" and re-tripped bug 1 on every run.
 #
-# This test asserts: an update with a locally-modified last-sorting skill
-# file exits 0, saves the lock, and surfaces the SKIP; and two consecutive
-# updates converge with no SOURCE ever reported as skipped.
+# This test asserts: two consecutive updates converge with no SOURCE churn, and
+# an update with a locally modified last-sorting skill file overwrites it, exits
+# 0 and saves the lock.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,6 +32,7 @@ mkdir -p "$TOOLKIT/bin/lib" "$TOOLKIT/core/commands" "$TOOLKIT/core/templates" \
 
 cp "$REPO_ROOT/bin/tricycle" "$TOOLKIT/bin/tricycle"
 cp "$REPO_ROOT/bin/lib/"*.sh "$TOOLKIT/bin/lib/"
+cp "$REPO_ROOT/core/scripts/bash/assemble-commands.sh" "$REPO_ROOT/core/scripts/bash/common.sh" "$TOOLKIT/core/scripts/bash/"
 printf '0.1.0\n' > "$TOOLKIT/VERSION"
 
 printf 'command body\n' > "$TOOLKIT/core/commands/trc.fixture.md"
@@ -74,24 +75,17 @@ if echo "$OUT2" | grep -q 'SKIP .*SOURCE'; then
   exit 1
 fi
 
-# ── Run 3: a locally modified, lock-tracked skill file that sorts LAST in
-# its directory must be SKIPped without killing the update or the lock save.
+# ── Run 3: a locally modified skill file that sorts LAST in its directory is
+# overwritten, and the update still reaches every later file and the lock save.
 printf 'user fork\n' > "$CONSUMER/.claude/skills/zz-skill/zz-userfile.md"
-
-# Sanity: also ship a NEW core command so we can prove post-skill work and
-# the lock save still happen after the skill SKIP.
 printf 'late arrival\n' > "$TOOLKIT/core/commands/zz-late.md"
-LOCK_BEFORE=$(cat "$CONSUMER/.tricycle.lock")
 OUT3=$("$TOOLKIT/bin/tricycle" update 2>&1) \
-  || { echo "FAIL: update with last-sorting skipped skill file exited non-zero"; echo "$OUT3"; exit 1; }
-
-echo "$OUT3" | grep -q 'SKIP .claude/skills/zz-skill/zz-userfile.md' \
-  || { echo "FAIL: modified skill file not surfaced as SKIP"; echo "$OUT3"; exit 1; }
-grep -q '^user fork$' "$CONSUMER/.claude/skills/zz-skill/zz-userfile.md" \
-  || { echo "FAIL: user's skill file was overwritten"; exit 1; }
+  || { echo "FAIL: update with a modified last-sorting skill file exited non-zero"; echo "$OUT3"; exit 1; }
+grep -q '^upstream$' "$CONSUMER/.claude/skills/zz-skill/zz-userfile.md" \
+  || { echo "FAIL: skill hand edit survived update"; exit 1; }
 [ -f "$CONSUMER/.claude/commands/zz-late.md" ] \
-  || { echo "FAIL: files after the skipped skill were never installed (update aborted early)"; exit 1; }
+  || { echo "FAIL: files after the skill were never installed (update aborted early)"; exit 1; }
 grep -q '"\.claude/commands/zz-late\.md"' "$CONSUMER/.tricycle.lock" \
-  || { echo "FAIL: lock was not saved after the skill SKIP"; diff <(echo "$LOCK_BEFORE") "$CONSUMER/.tricycle.lock" || true; exit 1; }
+  || { echo "FAIL: lock was not saved"; exit 1; }
 
 echo "update-skip-resilience: OK"

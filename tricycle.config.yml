@@ -3,7 +3,6 @@
 project:
   name: "tricycle-pro"
   type: "single-app"
-  package_manager: "npm"
   base_branch: "main"
 
 apps:
@@ -16,33 +15,9 @@ branching:
   style: issue-number
   prefix: TRI
 
-workflow:
-  blocks:
-    specify:
-      enable:
-        - worktree-setup
-      skills:
-        - document-writer
-    plan:
-      skills:
-        - document-writer
-    implement:
-      enable:
-        - worktree-cleanup
-      skills:
-        - code-reviewer
-    review:
-      skills: []
-
-review:
-  profiles:
-    - quality
-    - style
-    - security
-    - complexity
-  sources: []
-  report_dir: docs/reviews
-  post_to_pr: false
+spec:
+  store: repo
+  dir: docs/specs
 
 worktree:
   enabled: false
@@ -68,7 +43,6 @@ push:
 
 constitution:
   root: ".trc/memory/constitution.md"
-  per_app: false
 
 context:
   session_start:
@@ -82,5 +56,10 @@ integrations:
     enabled: false            # master switch for everything in this block
     auto_install: false       # if true, hook may `pip install graphifyy` when missing
     auto_bootstrap: false     # if true, hook may run first-time `graphify .` when no graph exists
-    refresh_on_kickoff: true  # run `graphify . --update` async at /trc.specify|/trc.chain|/trc.headless|/trc.band kickoff
-    mcp_per_chain: true       # spawn `graphify --mcp` per chain run and pipe endpoint to workers
+    refresh_on_kickoff: true  # run `graphify . --update` async at /trc.plan|/trc.implement|/trc.chain|/trc.band kickoff
+
+# Each style part acts only when its plugin is installed: caveman for chat,
+# asd-ste100 for the lint gate on persisted prose.
+style:
+  chat: ultracave
+  artifacts: ste-short

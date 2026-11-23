@@ -1,7 +1,7 @@
 ---
 name: debugging
 description: >
-  Structured debugging workflow: reproduce, isolate, trace, fix, verify.
+  Structured debugging workflow: reproduce, isolate, trace, fix, check.
   Use when investigating bugs, unexpected behavior, or test failures.
   Guides systematic root-cause analysis instead of trial-and-error.
 ---
@@ -21,7 +21,7 @@ Use this Skill when you are:
 
 ### 1. Reproduce
 
-- Confirm the bug exists by reproducing the exact reported behavior
+- Check that the bug exists by reproducing the exact reported behavior
 - Identify the minimal steps or input to trigger the issue
 - Note the actual behavior vs. expected behavior
 - If the bug cannot be reproduced, gather more context before proceeding
@@ -55,9 +55,9 @@ Use this Skill when you are:
 - Consider edge cases that may have the same root cause
 - Do not refactor surrounding code as part of the fix
 
-### 5. Verify
+### 5. Check
 
-- Confirm the fix resolves the original reported behavior
+- Check that the fix resolves the original reported behavior
 - Run the full test suite to check for regressions
 - If a test did not exist for this bug, add one
 - Test edge cases related to the fix

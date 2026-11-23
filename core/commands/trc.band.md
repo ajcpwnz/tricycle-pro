@@ -1,9 +1,9 @@
 ---
 description: >-
   Orchestrate a large parent Linear issue ("epic") broken down into
-  sub-issues: recon the codebase into a roadmap (recon.md), pause for user
-  approval, then fan out parallel step-controlled worker agents that run the
-  configured trc flow one step at a time. Workers commit locally only; the
+  sub-issues. Recon the codebase into a roadmap (recon.md) and pause for user
+  approval. Then fan out parallel step-controlled worker agents that run
+  /trc.plan, then /trc.implement, one step at a time. Workers commit locally only. The
   orchestrator merges branches into an integration branch in roadmap order
   and pauses exactly once — at the end — for push approval.
 ---
@@ -19,30 +19,31 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Overview
 
 `/trc.band <PARENT-ISSUE-ID>` tackles one parent Linear issue whose work is
-broken down into sub-issues. It is an orchestrator: it fetches the parent
-and its sub-issues, performs codebase recon into a roadmap (`recon.md`),
-gets the user's approval on that roadmap, then runs sub-issues through the
-configured trc flow (`workflow.chain`) using parallel worker agents — one
-worker per sub-issue, one trc step at a time, every step reported back to
-the orchestrator before the next is issued.
+broken down into sub-issues. It is an orchestrator. It fetches the parent
+and its sub-issues and performs codebase recon into a roadmap (`recon.md`).
+After the user approves that roadmap, it runs each sub-issue through
+`/trc.plan` then `/trc.implement` using parallel worker agents. There is one
+worker per sub-issue and one step at a time. Every step reports back to the
+orchestrator before the next is issued. A spec that passes the
+`trc-spec-validator` agent counts as approved: there is no spec approval stop.
 
 **Core principles**:
 
-- **Fresh context per sub-issue, supervised per step.** Each sub-issue gets
+- **Fresh context per sub-issue, supervised per step.** Each sub-issue has
   its own worker with its own context and its own git worktree. Unlike
   `/trc.chain`'s fire-and-report-per-ticket workers, band workers run ONE
   trc step, report, and await the orchestrator's next-step instruction.
-- **Autonomous until genuinely ambiguous.** Workers never pause; ambiguity
+- **Autonomous until genuinely ambiguous.** Workers never pause. Ambiguity
   comes back as a structured `blocked` report. The orchestrator then pauses
   the whole band and asks the USER. Everything else proceeds without user
   involvement.
 - **No remote mutation of any kind before the final gate.** Workers commit
   locally. The orchestrator merges locally. Exactly one user approval — at
   epic end, after full verification — precedes the single push event.
-  This is intentionally different from `/trc.chain`'s per-ticket approval:
-  band performs exactly one push event per epic, so one fresh confirmation
-  per push event still holds (`push.require_approval` is honored by the
-  final gate).
+  This is intentionally different from `/trc.chain`'s per-ticket approval.
+  The band performs exactly one push event per epic. So one fresh
+  confirmation per push event still holds (the final gate honors
+  `push.require_approval`).
 
 ## Session Rename (Fallback)
 
@@ -85,7 +86,7 @@ Before doing anything ELSE (after the rename above):
    independent tickets, use /trc.chain instead.
    ```
 
-3. **Project init check**. Verify `tricycle.config.yml` and `.trc/` exist.
+3. **Project init check**. Check that `tricycle.config.yml` and `.trc/` exist.
    If either is missing, STOP and tell the user to run `npx tricycle-pro init`.
 
 4. **Helper path**. Every `band-run.sh` snippet in this command references
@@ -96,13 +97,10 @@ Before doing anything ELSE (after the rename above):
    every invocation.
 
 5. **Read the run configuration**:
-   - `max_parallel` via `parse_band_config` (sourced from
-     `.trc/scripts/bash/common.sh`; reads `band.max_parallel`, default 3).
-   - The configured trc flow steps via `parse_chain_config` (reads
-     `workflow.chain`, default `specify plan tasks implement`). Workers run
-     exactly these steps, in this order. Steps like `clarify`/`analyze`, if
-     configured, execute with headless overrides (auto-resolve non-critical
-     clarifications; report `blocked` for critical ones).
+   - `max_parallel` via `parse_band_config`, sourced from
+     `.trc/scripts/bash/common.sh`. It reads `band.max_parallel` (default 3).
+   - The steps are fixed: `plan`, then `implement`. Workers run exactly these
+     two steps, in this order.
 
 ## Resume Detection
 
@@ -141,12 +139,12 @@ Wait for the user's choice for each run before proceeding.
     compare to `commit_sha`. On match → proceed to the Integration Protocol
     for this issue. On mismatch → surface to the user:
     `[R]e-run implement step / [S]kip issue / [A]bort band`.
-  - **`in_progress`** → verify the artifacts of every step in
-    `steps_completed` exist on disk in the issue's worktree
-    (`specs/<branch>/spec.md`, `plan.md`, `tasks.md` as applicable, and
-    `git -C <worktree> log` for implement). On match → respawn a FRESH
-    worker (the old one is gone) using the Worker Brief with the
-    **respawn-resume preamble** (see Worker Brief variants), starting at
+  - **`in_progress`** → check that the artifacts of every step in
+    `steps_completed` exist on disk in the issue's worktree. For plan, the
+    artifact is the stored spec, at `<spec.dir>/<issue-id>.md` or in the
+    ticket. For implement, it is `git -C <worktree> log`. On match → respawn
+    a FRESH worker (the old one is gone). Use the Worker Brief with the
+    **respawn-resume preamble** (see Worker Brief variants), and start at
     the first uncompleted step. On mismatch (state says a step completed
     but its artifact is missing) → surface to the user:
     `[R]erun step / [S]kip issue / [A]bort band`.
@@ -154,6 +152,11 @@ Wait for the user's choice for each run before proceeding.
 
   If `paused_for` is set, re-present the blocked issue's `questions[]` to
   the user before resuming the scheduler.
+
+  The watches of the old session also stopped. Start the stall watchdog
+  and the capacity watch again (Run Init item 5) before the first
+  scheduler pass. Each respawn writes its new `agentId` to the `.agent`
+  sidecar and replaces the old value.
 - **Discard**: call `band-run.sh close --run-id <id> --terminal-status
   aborted --reason "user discarded"`, then continue with the new input.
 - **Ignore**: leave the interrupted run untouched, continue. It will
@@ -166,13 +169,16 @@ Wait for the user's choice for each run before proceeding.
 
 ### Fetch the parent and its sub-issues
 
+`<linear>` stands for the name of the connected Linear MCP server, for example
+`linear` or `linear-server`.
+
 1. Fetch the parent issue:
    ```
-   mcp__linear-server__get_issue({id: "<PARENT-ID>"})
+   mcp__<linear>__get_issue({id: "<PARENT-ID>"})
    ```
 2. Fetch ALL sub-issues of the parent:
    ```
-   mcp__linear-server__list_issues({parentId: "<parent UUID from step 1>"})
+   mcp__<linear>__list_issues({parentId: "<parent UUID from step 1>"})
    ```
    Follow the pagination cursor (`after`) until exhausted — a partial child
    set is a hard failure, not a working set. If `list_issues` is
@@ -180,7 +186,7 @@ Wait for the user's choice for each run before proceeding.
    identifiers from the parent issue's relations/body and `get_issue` each
    one.
 3. Optionally fetch the parent project once via
-   `mcp__linear-server__get_project` for epic-level goals/non-goals. On
+   `mcp__<linear>__get_project` for epic-level goals/non-goals. On
    error here, continue without project context — missing project data is
    not an abort condition.
 
@@ -196,7 +202,7 @@ Wait for the user's choice for each run before proceeding.
   ```
   Error: <PARENT-ID> has no sub-issues. /trc.band orchestrates a broken-down
   epic. Either break the parent into sub-issues first, or run the single
-  issue via /trc.headless.
+  issue with /trc.plan and /trc.implement.
   ```
 - If some sub-issue fetches succeed and some fail, still abort — do NOT
   proceed with a partial set.
@@ -244,21 +250,21 @@ fill every mandatory section:
 - **Dependency Roadmap**:
   - *Dependency Graph*: edges from Linear blocks/blocked-by relations,
     dependencies inferred from issue bodies, and file-overlap analysis.
-  - *Waves*: group into waves; two sub-issues touching the same module
+  - *Waves*: group into waves. Two sub-issues touching the same module
     MUST NOT share a wave. A wave starts only after every earlier wave has
     fully drained.
   - *Complexity & Model Assignment*: rate each sub-issue `low`/`medium`/
     `high` by scope of files, novelty, cross-cutting risk, and test
-    surface; assign the worker model from the matrix below.
+    surface. Assign the worker model from the matrix below.
 - **Verification Strategy**: per the batching heuristics (see section
   below), name the decision per issue and per wave.
 - **Integration Plan**: merge order, expected conflict hotspots, rebase
   policy.
 - **Risks & Open Questions**: anything with a `[NEEDS CLARIFICATION: …]`
   marker MUST be raised at the approval gate below.
-- **Epic Checklist**: one unchecked item per sub-issue plus wave-verify,
-  final-verify, approval, and push items. The checklist is ticked by the
-  ORCHESTRATOR ONLY; workers never edit recon.md.
+- **Epic Checklist**: one unchecked item per sub-issue plus wave-verification,
+  final-verification, approval, and push items. The checklist is ticked by the
+  ORCHESTRATOR ONLY. Workers never edit recon.md.
 
 **Worker model matrix.** Determine your own model (the orchestrator's),
 then assign worker models:
@@ -299,8 +305,8 @@ Approve this roadmap to start the workers? (yes / amend / no)
   questions AT this gate and fold the answers into recon.md before
   proceeding.
 
-Push approval is NOT granted here. The recon gate approves fan-out only;
-the push gate at the end is separate and always asked fresh.
+Push approval is NOT granted here. The recon gate approves fan-out only.
+The push gate at the end is separate and always asked fresh.
 
 ## Run Init
 
@@ -309,14 +315,19 @@ Only after recon approval:
 1. **Provision worktrees serially** — one `git worktree add` at a time
    (concurrent worktree-adds contend on `.git` locks). For each sub-issue,
    in wave order, provision via the existing script so deps install and
-   env copying follow the project convention:
+   env copying follow the project convention.
+   Do not provision in parallel. The dependency install is the slow part,
+   not the `git worktree add`. Parallel installs overload the disk and take
+   more time in total. Provision one worktree, wait for its JSON, then do
+   the next one:
    ```bash
    .trc/scripts/bash/create-new-feature.sh --provision-worktree \
-     --issue "<sub-issue-id>" --json
+     --style issue-number --issue "<sub-issue-id>" --json \
+     "<sub-issue-id> <sub-issue title>"
    ```
-   Capture each `branch` and `worktree_path`.
+   Capture each `BRANCH_NAME` and `WORKTREE_PATH` from the JSON output.
 2. **Create the integration worktree + branch** (this satisfies the
-   block-branch-in-main hook, which allows branch creation only via
+   guard-main-checkout hook, which allows branch creation only via
    `git worktree add`):
    ```bash
    git worktree add -b "band/<PARENT-ID>" ".worktrees/band-<PARENT-ID>" "<push.pr_target>"
@@ -327,15 +338,31 @@ Only after recon approval:
      --parent "<PARENT-ID>" \
      --issues '<json array of {id,title,branch,worktree,complexity,model,wave,depends_on}>' \
      --recon "<temp recon path>" \
-     --chain '<json array of configured steps>' \
      --max-parallel <N> \
      --integration-worktree ".worktrees/band-<PARENT-ID>" \
      --integration-base "<push.pr_target>"
    ```
-   Capture `run_id` and `recon_path` (the recon is copied into the run dir
-   at `specs/.band-runs/<run-id>/recon.md`; that copy is the canonical one
-   workers read). On any helper error, surface it and abort.
+   Capture `run_id` and `recon_path`. The helper copies the recon into the
+   run dir at `specs/.band-runs/<run-id>/recon.md`, and that copy is the
+   canonical one workers read. On any helper error, surface it and abort.
 4. Tick `Recon approved by user` in the run-dir recon.md checklist.
+5. **Start the two watches** with the Monitor tool, one time for the
+   full run, not one time for each step. Each line of output is an event:
+   ```bash
+   bash .trc/scripts/bash/band-watchdog.sh --run-id "<run_id>"
+   ```
+   ```bash
+   bash .trc/scripts/bash/band-capacity-watch.sh --run-id "<run_id>"
+   ```
+   - The stall watchdog uses `band-reconcile.sh`. It writes one line when
+     an issue becomes `phantom`, `stalled` or `finished_unrecorded`. It
+     stops when no issue is `running`.
+   - The capacity watch writes a `CAPACITY IDLE` line when worker slots
+     are free and issues wait to start or to continue. It does not stop at
+     zero running workers. It stops only when the run is drained. Start it
+     with `persistent: true`.
+   - On a `CAPACITY IDLE` line, stop the current serial work (merges,
+     checks, debugging). Run the Scheduler Loop and fill the free slots.
 
 ## Worker Brief Template (Step-Scoped)
 
@@ -366,16 +393,13 @@ PRE-PROVISIONED WORKTREE:
 A worktree has been provisioned for you at: <worktree_path>
 On a new branch: <branch>
 
-BEFORE running any trc step, you MUST:
-  1. cd '<worktree_path>' so that every subsequent command runs inside it.
-  2. Export TRC_PREPROVISIONED_WORKTREE='<worktree_path>' so /trc.specify
-     picks up the handoff and skips worktree-setup.
+BEFORE you run any trc step, cd '<worktree_path>' so that every later
+command runs inside it. /trc.implement sees the worktree and works in it.
 
-DO NOT re-run any worktree-setup block. DO NOT call
+DO NOT re-run any worktree-setup step. DO NOT call
 `create-new-feature.sh --provision-worktree`. DO NOT rename the branch.
-DO NOT change the spec directory name. The spec directory MUST be
-exactly `specs/<branch>/` — no suffixes like `-procedures`, `-impl`,
-etc. — because the pre-push marker convention binds to
+Local testing evidence goes under exactly `specs/<branch>/`, with
+no suffixes, because the pre-push marker convention binds to
 `specs/<branch>/.local-testing-passed`.
 
 RUN DIRECTORY: specs/.band-runs/<run-id>/
@@ -394,11 +418,15 @@ ORCHESTRATOR NOTES:
 <concerns, cross-issue consistency notes, or user answers folded in from
 the previous step review — "None" on the first step>
 
-EXECUTE: run /trc.<step-name> for this issue with headless semantics:
-auto-resolve non-critical clarifications with reasonable defaults and
-document the assumption; only a genuinely blocking ambiguity (no
-reasonable default exists; interpretations diverge fundamentally) stops
-the step.
+EXECUTE: run `/trc.<step-name> <issue-id>` for this issue, unattended.
+  - plan: skip plan mode and do not call AskUserQuestion. Settle each
+    question from the code and the rules, and note the assumption in the
+    spec. A validator PASS is the approval: store the spec and report.
+    Only input that only the user holds stops the step: report `blocked`
+    with the question.
+  - implement: run it through lint, tests and the version bump. Skip its
+    push and worktree-cleanup sections: the orchestrator owns everything
+    remote.
 
 HARD CONTRACT:
 
@@ -445,7 +473,7 @@ HARD CONTRACT:
        "issue_id":    "<issue-id>",
        "step":        "<step-name>",
        "status":      "step_complete" | "blocked" | "failed",
-       "artifacts":   ["specs/<branch>/spec.md", ...],
+       "artifacts":   ["<spec location>", "<commit sha>", ...],
        "branch":      "<branch>",
        "commit_sha":  null | "<sha — non-null only after implement>",
        "lint_status": "pass" | "fail" | "skipped",
@@ -495,15 +523,29 @@ fresh worker replaces a dead one):
 
 ```
 RESUME CONTEXT: a previous worker already completed steps <list> for this
-sub-issue. Their artifacts exist in your worktree (specs/<branch>/...).
+sub-issue. Their artifacts exist: the spec at `<spec.dir>/<issue-id>.md` or in
+the ticket, and the commits in your worktree.
 VERIFY they exist, read them for context, do NOT regenerate them. Your
 work starts at step <k>: <step-name>.
 ```
 
+## Continuation Mechanism
+
+The step-scoped design uses `SendMessage` to continue the same worker
+across steps. Some Claude Code builds do not supply `SendMessage` at
+runtime. Find out at the first continuation. If `SendMessage` is not a
+tool that you can call, use a fresh `Agent` spawn for each step for the
+full run. Give each fresh worker the respawn-resume preamble. The worker
+reads the artifacts of the prior steps from disk. This keeps the review of each
+step before the next step starts. Do not stop to discuss this choice.
+
+Do not change to one worker that runs all steps without review. That is
+the only option that removes the step review.
+
 ## Scheduler Loop
 
 The orchestrator's core loop. All git operations (worktree add/remove,
-merges, branch deletes) are executed by the orchestrator, serially —
+merges, branch removals) are executed by the orchestrator, serially —
 workers only ever touch their own worktree.
 
 Repeat until every issue is terminal (`merged`/`completed`/`failed`/
@@ -518,37 +560,63 @@ Repeat until every issue is terminal (`merged`/`completed`/`failed`/
    Trust it: wave gating, dependency gating, slot arithmetic, and pause
    masking are all computed there.
 
+   Before you trust the board on each pass, compare the state with the
+   real workers:
+   ```bash
+   bash .trc/scripts/bash/band-reconcile.sh --run-id "<run_id>"
+   ```
+   Do the action for each class in its output:
+   - `phantom` (running, no worker attached): respawn that step now.
+   - `stalled` (worker transcript is idle): the worker is dead. Respawn it.
+   - `finished_unrecorded` (the progress file shows the step is complete
+     or committed): the worker is done. Record its result and advance.
+     Do not respawn it.
+
 2. **Handle `dep_failed`**: for each listed issue, mark it
    `blocked_by_failure` via `update-issue` and note it for the summary.
 
-3. **Spawn** each issue in `spawn`: mark the first step running —
+3. **Spawn** each issue in `spawn`. Do the mark and the `Agent` call in
+   the SAME turn. Never mark an issue running and spawn it later. A worker
+   report can arrive between the two and the spawn is then lost. The issue
+   then shows `running` with no worker. Mark the first step running —
    ```bash
    bash .trc/scripts/bash/band-run.sh update-step \
      --run-id "<run_id>" --issue "<issue-id>" \
      --step "<first step>" --step-status running
    ```
-   — then call `Agent` with `name: "band-worker-<issue-id>"`,
+   — then, in the same turn, call `Agent` with
+   `name: "band-worker-<issue-id>"`,
    `subagent_type: "general-purpose"`, `model: "<model from recon
    roadmap>"`, `run_in_background: true`, and the initial Worker Brief as
-   the prompt.
+   the prompt. Then write the returned `agentId` to the sidecar file
+   immediately:
+   ```bash
+   printf '%s' "<agentId>" > specs/.band-runs/<run_id>/<issue-id>.agent
+   ```
+   The sidecar shows that a worker is attached. A `running` issue without
+   a sidecar is a lost spawn, and `band-reconcile.sh` reports it as
+   `phantom`.
 
 4. **Continue** each issue in `continue`: compose the next-step prompt
    (see Step Review Protocol), mark the step running via `update-step`,
-   then `SendMessage` to `band-worker-<issue-id>` with the continuation
-   message. **Never SendMessage the same worker twice without an
-   intervening report.**
+   then continue the worker. If `SendMessage` is available, `SendMessage`
+   to `band-worker-<issue-id>` with the continuation message. **Never
+   SendMessage the same worker twice without an intervening report.** If
+   `SendMessage` is not available (see Continuation Mechanism), spawn a
+   FRESH `Agent` with the respawn-resume preamble. Write its new `agentId`
+   to the `.agent` sidecar. The same-turn rule of item 3 applies.
 
 5. **Wait for any background worker completion notification.** Do not
-   poll with sleeps; the harness notifies you when a background agent
+   poll with sleeps. The harness notifies you when a background agent
    finishes its turn. While waiting, you may surface per-issue progress
    on demand:
    ```bash
    bash .trc/scripts/bash/band-run.sh progress --run-id "<run_id>" --issue "<issue-id>"
    ```
-   Displayed as `[<issue-id>] last completed: <phase>`. Do NOT stream
+   Show it as `[<issue-id>] last completed: <phase>`. Do NOT stream
    worker transcripts.
 
-6. **On each worker report**, validate and record it (Step Review
+6. **On each worker report**, check and record it (Step Review
    Protocol), then loop back to step 1.
 
 **Dead-worker rule**: if a spawned/continued worker errors out, or a
@@ -556,10 +624,10 @@ completion never arrives while its progress file shows no change, treat
 the worker as dead. Re-issue `update-step --step-status running` for the
 same step (running → running on the same step is a legal respawn
 transition) and spawn a FRESH `Agent` with the respawn-resume preamble.
-A `SendMessage` that is never answered means the worker is gone — respawn;
-do not retry the message blind.
+A `SendMessage` that is never answered means the worker is gone — respawn.
+Do not retry the message blind.
 
-**Failure rule**: a `failed` step report gets ONE retry — re-run the same
+**Failure rule**: a `failed` step report receives ONE retry — re-run the same
 step with the failure diagnostics folded into the next-step prompt. A
 second failure marks the issue `failed` (via `update-issue`), which
 cascades `blocked_by_failure` to its dependents through `next-ready`'s
@@ -570,29 +638,33 @@ single issue's failure unless every remaining issue is downstream of it.
 
 On every worker report:
 
-1. **Validate** the fenced ```json``` block strictly: it must parse, and
+1. **Check** the fenced ```json``` block strictly: it must parse, and
    must contain `issue_id`, `step`, `status`, `branch`, `summary`, with
    `status` ∈ `step_complete | blocked | failed`. A malformed report is
    treated as `failed` for the failure rule above.
 2. **Record** via `band-run.sh update-step` (and, after a final implement
    step with a commit, `update-issue --status committed --commit-sha <sha>
-   --lint <s> --test <s>`).
+   --lint <s> --test <s>`). A worker can add a follow-up commit on top of
+   the recorded sha, for example a fix for its own red test. Record that
+   new sha with `--advance-commit`. Do not use `--increment-rebase` for
+   this. That flag is for a conflict rebase and uses one of the two rebase
+   rounds.
 3. **Review the content**: check the summary and artifacts against
-   recon.md's scope for that sub-issue and against sibling issues'
-   reported decisions (e.g. shared naming, shared schema choices). Fold
+   recon.md's scope for that sub-issue. Also check them against sibling
+   issues' reported decisions (e.g. shared naming, shared schema choices). Fold
    any concern into the NEXT step's ORCHESTRATOR NOTES — that is how the
    parent raises concerns without ever pausing a worker.
 4. **Branch on status**:
    - `step_complete` with steps remaining → the issue shows up in
      `continue` on the next scheduler pass.
-   - `step_complete` on the final step → expect `commit_sha`; record
+   - `step_complete` on the final step → expect `commit_sha`. Record
      `committed` and enter the Integration Protocol for this issue.
    - `blocked` → Pause Protocol below.
    - `failed` → failure rule above.
 
 **Context hygiene**: retain only the destructured report fields. Keep at
 most the LATEST report per issue plus a one-line ledger of its prior
-steps ("TRI-201: specify ✓ plan ✓ — implementing"). recon.md and
+steps ("TRI-201: plan ✓ — implementing"). recon.md and
 state.json are the durable memory — re-read them via `band-run.sh get`
 instead of keeping history in context. Never re-read worker transcripts.
 
@@ -620,7 +692,7 @@ When any worker reports `status: "blocked"`:
    into the respawn brief.
 4. Resume the Scheduler Loop.
 
-The orchestrator itself can also trigger this protocol: if recon-level
+The orchestrator itself can also trigger this protocol. If recon-level
 assumptions collapse mid-run (e.g. two sub-issues turn out to be
 fundamentally incompatible), pause and ask rather than guessing.
 
@@ -630,12 +702,12 @@ The orchestrator decides where the full lint+test suite runs. Encode the
 decision in each implement step's ORCHESTRATOR NOTES:
 
 - **Full suite per sub-issue** when ANY of:
-  - the sub-issue is rated `high` complexity in recon.md;
-  - it is the sole member of its wave;
+  - the sub-issue is rated `high` complexity in recon.md.
+  - it is the sole member of its wave.
   - it touches shared infrastructure named in recon.md's shared-surface
     matrix.
 - **Otherwise**: the worker runs only scoped/fast checks during implement
-  (e.g. the affected package's test-blocks), and the orchestrator runs the
+  (e.g. the affected package's test-blocks). The orchestrator runs the
   FULL suite once per wave, in the integration worktree, after the wave's
   branches are merged. A wave-batch failure is bisected by re-running the
   suite after unwinding the most recent merge first.
@@ -651,7 +723,7 @@ When a sub-issue reaches `committed`:
 
 1. **Merge in roadmap order**: a branch merges only after ALL its
    dependency-graph predecessors are merged. If predecessors are still in
-   flight, leave the issue `committed` and continue the scheduler; merge
+   flight, leave the issue `committed` and continue the scheduler. Merge
    it when its turn comes.
 2. **Merge** (orchestrator, in the integration worktree, serially):
    ```bash
@@ -665,9 +737,9 @@ When a sub-issue reaches `committed`:
      --merged-sha "$(git -C .worktrees/band-<PARENT-ID> rev-parse HEAD)"
    ```
    Tick the issue's checklist item in recon.md.
-3. **On conflict**: abort the merge (`git merge --abort`), then send the
-   Rebase brief to the issue's worker via `SendMessage` (or spawn a fresh
-   agent in that worktree with the rebase brief if the worker is dead).
+3. **On conflict**: abort the merge (`git merge --abort`). Then send the
+   Rebase brief to the issue's worker via `SendMessage`. If the worker is
+   dead, spawn a fresh agent in that worktree with the rebase brief instead.
    When the rebase report arrives with the new sha, record it:
    ```bash
    bash .trc/scripts/bash/band-run.sh update-issue \
@@ -675,7 +747,7 @@ When a sub-issue reaches `committed`:
      --commit-sha "<new sha>" --increment-rebase --merged-sha "<...>"
    ```
    then retry the merge. **Rebase cap**: the helper enforces at most 2
-   rebase rounds per sub-issue (`ERR_REBASE_CAP`); on the cap, run the
+   rebase rounds per sub-issue (`ERR_REBASE_CAP`). On the cap, run the
    Pause Protocol — present the conflict to the user instead of looping.
 4. **After each wave fully merges**, run the wave-batch verification per
    the heuristics above.
@@ -689,8 +761,8 @@ When every issue is terminal and all merges are done:
    a worker in the integration worktree, or pause and ask the user if the
    failure implicates a design decision. Do NOT proceed to the gate with a
    red suite.
-2. Tick `Final full-suite verification passed` in recon.md; copy the
-   ticked recon.md state; render the Summary table (below) for the user.
+2. Tick `Final full-suite verification passed` in recon.md. Copy the
+   ticked recon.md state. Render the Summary table (below) for the user.
 3. **THE approval gate** — exactly one, always asked fresh, in plain
    dialog:
    ```
@@ -704,22 +776,22 @@ When every issue is terminal and all merges are done:
    **No remote mutation of any kind happens before this gate** — no
    pushes, no PRs, no Linear status changes that imply shipped. If the
    user wants per-sub-issue PRs instead of the single epic PR, they can
-   say so here; honor it (push each sub-issue branch, open stacked PRs in
-   roadmap order) — but the default and recommendation is ONE epic PR
+   say so here. Honor it: push each sub-issue branch, and open stacked PRs
+   in roadmap order. But the default and recommendation is ONE epic PR
    from the integration branch, with recon.md's overview as the PR body.
 4. **On `no`**: stop. Leave all branches, worktrees, and the integration
    branch intact for manual handling. Close the run:
    `band-run.sh close --terminal-status aborted --reason "user declined
    epic push"`. Jump to Summary.
-5. **On `yes`** — each of the following is its OWN Bash call (never chain
-   marker + push + pr in one call; pre-push guards scan full command
-   strings):
+5. **On `yes`** — each of the following is its OWN Bash call. Never chain
+   marker + push + pr in one call, because pre-push guards scan full command
+   strings:
    a. **Pre-push marker**:
       ```bash
       touch ".worktrees/band-<PARENT-ID>/specs/band-<PARENT-ID>/.local-testing-passed"
       ```
       (Create the spec dir first if the project's marker convention
-      requires it; the path binds to the integration branch's spec dir,
+      requires it. The path binds to the integration branch's spec dir,
       no suffixes.)
    b. **Push**:
       ```bash
@@ -738,9 +810,10 @@ When every issue is terminal and all merges are done:
       ```bash
       gh pr view "<pr_url>" --json state,mergedAt
       ```
-      If `state` is `MERGED`, treat the merge as successful (server-side
-      merged, local sync failed — common when the base branch is checked
-      out in another worktree), log a one-line warning, continue. Only a
+      If `state` is `MERGED`, treat the merge as successful, log a one-line
+      warning, and continue. This state means the server-side merge
+      succeeded and the local sync failed. It is common when the base branch
+      is checked out in another worktree. Only a
       genuinely un-merged PR is a failure.
    e. Mark all merged issues `completed` (`update-issue --status completed
       --finished-now`), tick the push items in recon.md.

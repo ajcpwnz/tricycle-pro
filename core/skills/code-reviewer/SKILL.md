@@ -27,15 +27,15 @@ Use this Skill when you are:
 
 ### 2. Correctness Review
 
-- Verify the logic matches the intended behavior
+- Check that the logic matches the intended behavior
 - Check for off-by-one errors, null/undefined handling, edge cases
 - Ensure error paths are handled appropriately
-- Verify data validation at system boundaries
+- Check the data validation at system boundaries
 
 ### 3. Security Review
 
 - Check for injection vulnerabilities (SQL, command, XSS)
-- Verify authentication and authorization checks are in place
+- Check that authentication and authorization guards are in place
 - Look for hardcoded secrets, credentials, or API keys
 - Ensure sensitive data is not logged or exposed in error messages
 - Check for path traversal and file access vulnerabilities
@@ -45,12 +45,12 @@ Use this Skill when you are:
 - Identify potential N+1 queries or unnecessary loops
 - Check for missing indexes on queried fields
 - Look for unbounded data fetches (missing pagination/limits)
-- Verify resource cleanup (file handles, connections, subscriptions)
+- Check the resource cleanup (file handles, connections, subscriptions)
 
 ### 5. Maintainability Review
 
 - Check naming clarity (functions, variables, files)
-- Verify the change follows existing patterns in the codebase
+- Check that the change follows existing patterns in the codebase
 - Look for unnecessary complexity or premature abstraction
 - Check that comments explain "why" not "what"
 

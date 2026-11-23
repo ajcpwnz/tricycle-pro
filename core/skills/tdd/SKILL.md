@@ -22,7 +22,7 @@ Use this Skill when you are:
 ### 1. Red — Write a Failing Test
 
 - Write the smallest test that expresses the next piece of desired behavior
-- Run the test and confirm it fails for the expected reason
+- Run the test and check that it fails for the expected reason
 - The test should fail because the feature is not yet implemented, not because of a syntax or setup error
 - Name the test to describe the behavior being tested, not the implementation
 
@@ -31,19 +31,19 @@ Use this Skill when you are:
 - Write the minimum code necessary to make the failing test pass
 - Do not write more code than needed — just enough to turn the test green
 - Avoid the temptation to implement the "full" solution
-- Run all tests to verify nothing else broke
+- Run all tests to check that nothing else broke
 
 ### 3. Refactor — Clean Up
 
 - Now that tests are green, improve the code structure
 - Remove duplication, clarify names, simplify logic
-- Run all tests after each refactoring step to confirm they still pass
+- Run all tests after each refactoring step to check that they still pass
 - Do not add new behavior during refactoring — that requires a new Red step
 
 ## Guidelines
 
-- **One behavior per test**: Each test should verify one specific aspect
-- **Fast feedback**: Tests should run quickly; mock external dependencies if needed
+- **One behavior per test**: Each test should check one specific aspect
+- **Fast feedback**: Tests should run quickly. Mock external dependencies if needed
 - **Descriptive names**: Test names should read like specifications
 - **Test the interface, not the implementation**: Tests should survive refactoring
 - **Commit after each Green step**: Small, frequent commits with passing tests

@@ -7,7 +7,7 @@ Use **{{qa.primary_tool}}** as the PRIMARY testing tool. Use **{{qa.fallback_too
 only as a fallback when the primary tool cannot achieve the test.
 
 ### What to Test
-- Execute test cases from the QA test plan.
+- Walk the user journeys the change touches, in the order a user takes them.
 - Monitor for network errors: check browser console for failed requests, 500s, CORS errors,
   and uncaught exceptions. Record ALL of them.
 

@@ -19,16 +19,6 @@ err_json() {
     printf '{"error":"%s","code":"%s"}\n' "$(json_escape "$msg")" "$code" >&2
 }
 
-json_escape() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    s="${s//$'\t'/\\t}"
-    printf '%s' "$s"
-}
-
 # ─── State primitives ────────────────────────────────────────────────────
 
 band_run_iso8601_now() {
@@ -253,11 +243,11 @@ PY
 
 py_update_issue() {
     # Args: state_json issue status branch lint test commit_sha merged_sha
-    #       increment_rebase started_now finished_now concerns_json questions_json
+    #       increment_rebase advance_commit started_now finished_now concerns_json questions_json
     python3 - "$@" <<'PY'
 import json, sys, datetime
 (state_json, issue, status, branch, lint, test, commit_sha, merged_sha,
- increment_rebase, started_now, finished_now, concerns_json, questions_json) = sys.argv[1:14]
+ increment_rebase, advance_commit, started_now, finished_now, concerns_json, questions_json) = sys.argv[1:15]
 state = json.loads(state_json)
 
 def bail(msg, code, rc=2):
@@ -284,7 +274,12 @@ elif status in ("skipped", "blocked_by_failure"):
     if old != "pending":
         bail(f"illegal transition: {old} -> {status} (only legal from pending)", "ERR_BAD_TRANSITION")
 elif status in RANK:
-    if old not in RANK or RANK[status] != RANK[old] + 1:
+    # Re-stating the CURRENT status is legal and is a no-op on the status itself.
+    # Without this there is no way to correct a gate field (lint/test) that was
+    # recorded wrong, because every write demands a status and every same-status
+    # write was rejected — so a false "test: pass" was unfixable through the CLI
+    # and flowed straight into the run summary.
+    if status != old and (old not in RANK or RANK[status] != RANK[old] + 1):
         bail(f"illegal transition: {old} -> {status}", "ERR_BAD_TRANSITION")
 
 # commit_sha rules: immutable unless this update is an explicit rebase.
@@ -294,8 +289,14 @@ if increment_rebase == "1":
         bail(f"issue {issue} already rebased {t.get('rebase_count', 0)} times; cap is 2 — pause and escalate to the user",
              "ERR_REBASE_CAP")
     t["rebase_count"] = t.get("rebase_count", 0) + 1
-elif commit_sha and existing_sha and commit_sha != existing_sha:
-    bail(f"commit_sha is immutable without --increment-rebase (existing={existing_sha}, new={commit_sha})",
+elif commit_sha and existing_sha and commit_sha != existing_sha and advance_commit != "1":
+    # A worker that fixes its own red test commits ON TOP of the recorded sha.
+    # That is a follow-up, not a rebase, and forcing it through
+    # --increment-rebase would burn one of the two rebase-cap slots and record
+    # a conflict round that never happened. --advance-commit says "same branch,
+    # moved forward" without relaxing the guard against silent drift.
+    bail(f"commit_sha is immutable without --increment-rebase or --advance-commit "
+         f"(existing={existing_sha}, new={commit_sha})",
          "ERR_COMMIT_SHA_IMMUTABLE")
 if status == "committed" and not (commit_sha or existing_sha):
     bail("status=committed requires --commit-sha", "ERR_COMMIT_SHA_REQUIRED")
@@ -564,14 +565,13 @@ print(json.dumps(sys.argv[1:]))
 # ─── Subcommand: init ────────────────────────────────────────────────────
 
 sub_init() {
-    local parent_id="" issues_json="" recon_path="" chain_json="" max_parallel=""
+    local parent_id="" issues_json="" recon_path="" chain_json='["plan","implement"]' max_parallel=""
     local int_worktree="" int_base="main"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --parent) parent_id="$2"; shift 2 ;;
             --issues) issues_json="$2"; shift 2 ;;
             --recon) recon_path="$2"; shift 2 ;;
-            --chain) chain_json="$2"; shift 2 ;;
             --max-parallel) max_parallel="$2"; shift 2 ;;
             --integration-worktree) int_worktree="$2"; shift 2 ;;
             --integration-base) int_base="$2"; shift 2 ;;
@@ -589,12 +589,6 @@ sub_init() {
     if [[ ! -f "$recon_path" ]]; then
         err_json "ERR_RECON_MISSING" "recon path not found: $recon_path"
         return 2
-    fi
-    if [[ -z "$chain_json" ]]; then
-        # Default to the configured workflow chain.
-        local chain_str
-        chain_str=$(parse_chain_config "$REPO_ROOT/tricycle.config.yml")
-        chain_json=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1].split()))' "$chain_str")
     fi
     if [[ -z "$max_parallel" ]]; then
         max_parallel=$(parse_band_config "$REPO_ROOT/tricycle.config.yml")
@@ -686,7 +680,7 @@ sub_update_step() {
 sub_update_issue() {
     local run_id="" issue="" status=""
     local branch="" lint="" test="" commit_sha="" merged_sha=""
-    local increment_rebase="0" started_now="0" finished_now="0"
+    local increment_rebase="0" advance_commit="0" started_now="0" finished_now="0"
     local concerns=() questions=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -701,6 +695,7 @@ sub_update_issue() {
             --concern) concerns+=("$2"); shift 2 ;;
             --question) questions+=("$2"); shift 2 ;;
             --increment-rebase) increment_rebase="1"; shift ;;
+            --advance-commit) advance_commit="1"; shift ;;
             --started-now) started_now="1"; shift ;;
             --finished-now) finished_now="1"; shift ;;
             *) err_json "ERR_BAD_INPUT" "unknown flag: $1"; return 2 ;;
@@ -719,7 +714,7 @@ sub_update_issue() {
     if (( ${#questions[@]} > 0 )); then q_json=$(args_to_json_array "${questions[@]}"); else q_json="[]"; fi
     local updated
     updated=$(py_update_issue "$state_json" "$issue" "$status" "$branch" "$lint" "$test" \
-        "$commit_sha" "$merged_sha" "$increment_rebase" "$started_now" "$finished_now" \
+        "$commit_sha" "$merged_sha" "$increment_rebase" "$advance_commit" "$started_now" "$finished_now" \
         "$c_json" "$q_json"); rc=$?
     if [[ $rc -ne 0 ]]; then return $rc; fi
     band_run_write_state_atomic "$run_dir" "$updated"
@@ -912,7 +907,7 @@ Usage: band-run.sh <subcommand> [flags]
 
 Subcommands:
   init --parent <id> --issues <json> --recon <path>
-       [--chain <json>] [--max-parallel N]
+       [--max-parallel N]
        [--integration-worktree <path>] [--integration-base <branch>]
                            Create a new band run. issues json: array of
                            {id,title,branch,worktree,complexity,model,wave,depends_on}

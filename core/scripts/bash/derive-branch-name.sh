@@ -12,7 +12,6 @@
 
 set -e
 
-JSON_MODE=false  # kept for shape parity with create-new-feature.sh flags; unused here
 SHORT_NAME=""
 BRANCH_NUMBER=""
 STYLE=""
@@ -24,9 +23,6 @@ i=1
 while [ $i -le $# ]; do
     arg="${!i}"
     case "$arg" in
-        --json)
-            JSON_MODE=true
-            ;;
         --short-name)
             i=$((i + 1))
             [ $i -le $# ] || { echo "Error: --short-name requires a value" >&2; exit 1; }
@@ -75,7 +71,8 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
-FEATURE_DESCRIPTION=$(echo "$FEATURE_DESCRIPTION" | xargs)
+FEATURE_DESCRIPTION="${FEATURE_DESCRIPTION#"${FEATURE_DESCRIPTION%%[![:space:]]*}"}"
+FEATURE_DESCRIPTION="${FEATURE_DESCRIPTION%"${FEATURE_DESCRIPTION##*[![:space:]]}"}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
     echo "Error: feature description cannot be empty or whitespace-only" >&2
     exit 1
@@ -109,7 +106,7 @@ generate_branch_name() {
         if ! echo "$word" | grep -qiE "$stop_words"; then
             if [ ${#word} -ge 3 ]; then
                 meaningful_words+=("$word")
-            elif echo "$description" | grep -q "\b${word^^}\b"; then
+            elif echo "$description" | grep -q "\b$(echo "$word" | tr '[:lower:]' '[:upper:]')\b"; then
                 meaningful_words+=("$word")
             fi
         fi

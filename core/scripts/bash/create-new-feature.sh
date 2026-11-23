@@ -155,7 +155,8 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
 fi
 
 # Trim whitespace and validate description is not empty (e.g., user passed only whitespace)
-FEATURE_DESCRIPTION=$(echo "$FEATURE_DESCRIPTION" | xargs)
+FEATURE_DESCRIPTION="${FEATURE_DESCRIPTION#"${FEATURE_DESCRIPTION%%[![:space:]]*}"}"
+FEATURE_DESCRIPTION="${FEATURE_DESCRIPTION%"${FEATURE_DESCRIPTION##*[![:space:]]}"}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
     echo "Error: Feature description cannot be empty or contain only whitespace" >&2
     exit 1
@@ -186,81 +187,6 @@ find_repo_root() {
     return 1
 }
 
-# Function to get highest number from specs directory
-get_highest_from_specs() {
-    local specs_dir="$1"
-    local highest=0
-
-    if [ -d "$specs_dir" ]; then
-        for dir in "$specs_dir"/*; do
-            [ -d "$dir" ] || continue
-            dirname=$(basename "$dir")
-            number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
-            number=$((10#$number))
-            if [ "$number" -gt "$highest" ]; then
-                highest=$number
-            fi
-        done
-    fi
-
-    echo "$highest"
-}
-
-# Function to get highest number from git branches
-get_highest_from_branches() {
-    local highest=0
-
-    # Get all branches (local and remote)
-    branches=$(git branch -a 2>/dev/null || echo "")
-
-    if [ -n "$branches" ]; then
-        while IFS= read -r branch; do
-            # Clean branch name: remove leading markers and remote prefixes
-            clean_branch=$(echo "$branch" | sed 's/^[* ]*//; s|^remotes/[^/]*/||')
-
-            # Extract feature number if branch matches pattern ###-*
-            if echo "$clean_branch" | grep -q '^[0-9]\{3\}-'; then
-                number=$(echo "$clean_branch" | grep -o '^[0-9]\{3\}' || echo "0")
-                number=$((10#$number))
-                if [ "$number" -gt "$highest" ]; then
-                    highest=$number
-                fi
-            fi
-        done <<< "$branches"
-    fi
-
-    echo "$highest"
-}
-
-# Function to check existing branches (local and remote) and return next available number
-check_existing_branches() {
-    local specs_dir="$1"
-
-    # Fetch all remotes to get latest branch info (suppress errors if no remotes)
-    git fetch --all --prune >/dev/null 2>&1 || true
-
-    # Get highest number from ALL branches (not just matching short name)
-    local highest_branch=$(get_highest_from_branches)
-
-    # Get highest number from ALL specs (not just matching short name)
-    local highest_spec=$(get_highest_from_specs "$specs_dir")
-
-    # Take the maximum of both
-    local max_num=$highest_branch
-    if [ "$highest_spec" -gt "$max_num" ]; then
-        max_num=$highest_spec
-    fi
-
-    # Return next number
-    echo $((max_num + 1))
-}
-
-# Function to clean and format a branch name
-clean_branch_name() {
-    local name="$1"
-    echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//'
-}
-
 # Resolve repository root. Prefer git information when available, but fall back
 # to searching for repository markers so the workflow still functions in repositories that
 # were initialised with --no-git.
@@ -281,8 +207,6 @@ fi
 
 cd "$REPO_ROOT"
 
-SPECS_DIR="$REPO_ROOT/specs"
-mkdir -p "$SPECS_DIR"
 
 # --- Delegate slug + branch-name derivation to the shared helper ---
 # derive-branch-name.sh is the single source of truth for slug generation
@@ -399,7 +323,7 @@ refresh_base_branch() {
             *"Could not resolve host"*|*"Connection refused"*|*"Operation timed out"*|\
             *"unable to access"*|*"Authentication failed"*|*"Network is unreachable"*|\
             *"Could not read from remote"*|*"timed out"*)
-                >&2 echo "[specify] Warning: origin unreachable; skipping base-branch refresh. New branch will be cut from local ${base}."
+                >&2 echo "[trc] Warning: origin unreachable; skipping base-branch refresh. New branch will be cut from local ${base}."
                 return 0
                 ;;
             *)
@@ -444,7 +368,7 @@ refresh_base_branch() {
 
     sha_after=$(git -C "$repo_root" rev-parse --verify -q "$base" 2>/dev/null || echo "")
     if [ -n "$sha_after" ] && [ "$sha_before" != "$sha_after" ]; then
-        >&2 echo "[specify] Base branch ${base} fast-forwarded to ${sha_after:0:12}"
+        >&2 echo "[trc] Base branch ${base} fast-forwarded to ${sha_after:0:12}"
     fi
     return 0
 }
@@ -536,7 +460,7 @@ provision_worktree() {
 }
 
 # TRI-32: fast-forward local base before cutting the new branch so every
-# kickoff (specify/headless/chain worker) starts from fresh upstream state.
+# kickoff (implement or chain worker) starts from fresh upstream state.
 # This runs AFTER the helper-function definitions above and BEFORE branch
 # creation below — placement enforced by bash's top-to-bottom parse.
 if [ "$HAS_GIT" = true ]; then
@@ -568,11 +492,9 @@ if [ "$HAS_GIT" = true ]; then
         fi
     fi
 else
-    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    >&2 echo "[trc] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
 
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
-SPEC_FILE="$FEATURE_DIR/spec.md"
 WORKTREE_PATH=""
 
 if [ "$PROVISION_WORKTREE" = true ]; then
@@ -613,64 +535,35 @@ if [ "$PROVISION_WORKTREE" = true ]; then
     fi
 
     provision_worktree "$WORKTREE_PATH" "$REPO_ROOT/.trc" "$PACKAGE_MANAGER" "$SETUP_SCRIPT" "$ENV_COPY_LINES"
-
-    # Create spec dir and copy template INSIDE the worktree
-    FEATURE_DIR="$WORKTREE_PATH/specs/$BRANCH_NAME"
-    SPEC_FILE="$FEATURE_DIR/spec.md"
-    mkdir -p "$FEATURE_DIR"
-    TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
-    if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
-        cp "$TEMPLATE" "$SPEC_FILE"
-    else
-        echo "Warning: Spec template not found; created empty spec file" >&2
-        touch "$SPEC_FILE"
-    fi
-elif [ "$NO_CHECKOUT" = false ]; then
-    mkdir -p "$FEATURE_DIR"
-
-    TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
-    if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
-        cp "$TEMPLATE" "$SPEC_FILE"
-    else
-        echo "Warning: Spec template not found; created empty spec file" >&2
-        touch "$SPEC_FILE"
-    fi
 fi
-
-# Inform the user how to persist the feature variable in their own shell
-printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 
 if $JSON_MODE; then
     if command -v jq >/dev/null 2>&1; then
         if [ "$PROVISION_WORKTREE" = true ]; then
             jq -cn \
                 --arg branch_name "$BRANCH_NAME" \
-                --arg spec_file "$SPEC_FILE" \
                 --arg feature_num "$FEATURE_NUM" \
                 --arg worktree_path "$WORKTREE_PATH" \
-                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,WORKTREE_PATH:$worktree_path}'
+                '{BRANCH_NAME:$branch_name,FEATURE_NUM:$feature_num,WORKTREE_PATH:$worktree_path}'
         else
             jq -cn \
                 --arg branch_name "$BRANCH_NAME" \
-                --arg spec_file "$SPEC_FILE" \
                 --arg feature_num "$FEATURE_NUM" \
-                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num}'
+                '{BRANCH_NAME:$branch_name,FEATURE_NUM:$feature_num}'
         fi
     else
         if [ "$PROVISION_WORKTREE" = true ]; then
-            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","WORKTREE_PATH":"%s"}\n' \
-                "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "$WORKTREE_PATH")"
+            printf '{"BRANCH_NAME":"%s","FEATURE_NUM":"%s","WORKTREE_PATH":"%s"}\n' \
+                "$(json_escape "$BRANCH_NAME")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "$WORKTREE_PATH")"
         else
-            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' \
-                "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
+            printf '{"BRANCH_NAME":"%s","FEATURE_NUM":"%s"}\n' \
+                "$(json_escape "$BRANCH_NAME")" "$(json_escape "$FEATURE_NUM")"
         fi
     fi
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
-    echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
     if [ "$PROVISION_WORKTREE" = true ]; then
         echo "WORKTREE_PATH: $WORKTREE_PATH"
     fi
-    printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
 fi

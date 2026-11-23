@@ -62,8 +62,8 @@ write_config_on
 run_hook "hello, not a slash command"
 assert_no_residue "non-kickoff prompt"
 # Now a kickoff command but buried inside free text — should still skip.
-run_hook "please run /trc.specify later for me"
-# Note: `/trc.specify later ...` is detected as a kickoff. The string above
+run_hook "please run /trc.plan later for me"
+# Note: `/trc.plan later ...` is detected as a kickoff. The string above
 # has it mid-sentence so it's NOT a kickoff. But the hook only checks the
 # trimmed prefix, so free-text prefix means no match → exit 0.
 assert_no_residue "free-text-wrapped kickoff"
@@ -71,7 +71,7 @@ assert_no_residue "free-text-wrapped kickoff"
 # ── Gate 2: config flag OFF ─────────────────────────────────────────────────
 write_config_off
 rm -rf "$TMP/graphify-out"
-run_hook "/trc.specify do a thing"
+run_hook "/trc.plan do a thing"
 assert_no_residue "flag off"
 
 # ── Gate 2b: refresh_on_kickoff explicitly false ────────────────────────────
@@ -97,7 +97,7 @@ assert_no_residue "refresh_on_kickoff false (band)"
 write_config_on
 rm -rf "$TMP/graphify-out"
 if ! command -v graphify >/dev/null 2>&1 && ! python3 -c 'import graphify' >/dev/null 2>&1; then
-  run_hook "/trc.specify X"
+  run_hook "/trc.plan X"
   assert_no_residue "graphify missing, auto_install off"
 else
   echo "  (skipping gate-3 subtest: graphify present on host)"
@@ -118,7 +118,7 @@ write_config_on
 rm -rf "$TMP/graphify-out"
 TMP_STUB_LOG="$TMP/stub.log" \
   PATH="$STUB_DIR:$PATH" \
-  run_hook "/trc.specify X"
+  run_hook "/trc.plan X"
 # Gate 4 exits 0 silently when no graph and auto_bootstrap off. The hook
 # should not have invoked graphify at all.
 if [ -f "$TMP/stub.log" ]; then
@@ -138,7 +138,7 @@ echo '{"nodes":[],"edges":[]}' > "$TMP/graphify-out/graph.json"
 : > "$TMP/stub.log"
 TMP_STUB_LOG="$TMP/stub.log" \
   PATH="$STUB_DIR:$PATH" \
-  run_hook "/trc.specify Happy path"
+  run_hook "/trc.plan Happy path"
 # The hook delegates to `tricycle graphify refresh`, which itself
 # backgrounds the graphify command. Give it a moment to spawn, then
 # confirm the refresh pid file exists.

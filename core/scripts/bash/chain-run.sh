@@ -18,16 +18,6 @@ err_json() {
     printf '{"error":"%s","code":"%s"}\n' "$(json_escape "$msg")" "$code" >&2
 }
 
-json_escape() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    s="${s//$'\t'/\\t}"
-    printf '%s' "$s"
-}
-
 # ─── State primitives ────────────────────────────────────────────────────
 
 chain_run_iso8601_now() {
@@ -67,22 +57,124 @@ chain_run_dir_for_id() {
     printf '%s/%s' "$CHAIN_RUNS_DIR" "$1"
 }
 
+# Ticket-count ceiling for one chain run. Default 8 (the quality guard: a run
+# wider than that is usually a band, not a chain). CHAIN_MAX_TICKETS raises it
+# for a single invocation when the operator has explicitly asked for one wider
+# run; it is deliberately env-only so the default guard stays 8 for everyone.
+chain_run_max_tickets() {
+    local v="${CHAIN_MAX_TICKETS:-8}"
+    case "$v" in
+        ''|*[!0-9]*) v=8 ;;
+    esac
+    if (( v < 1 )); then v=8; fi
+    printf '%s' "$v"
+}
+
+# Read chain.max_parallel from tricycle.config.yml. Anchors on a TOP-LEVEL
+# `chain:` key (column 0), so a nested key named `chain` never matches.
+# Default 2, clamped to 1-8.
+parse_chain_max_parallel() {
+    local config_file="$1"
+    python3 - "$config_file" <<'PY'
+import sys, re
+path = sys.argv[1]
+default = 2
+val = None
+try:
+    with open(path) as f:
+        lines = f.readlines()
+except OSError:
+    print(default); sys.exit(0)
+in_chain = False
+for line in lines:
+    raw = line.rstrip("\n")
+    # Top-level key at column 0 (letter/underscore, then colon).
+    if re.match(r'^[A-Za-z_][A-Za-z0-9_]*:', raw):
+        key = raw.split(':', 1)[0]
+        in_chain = (key == 'chain')
+        if in_chain:
+            m = re.search(r'max_parallel\s*:\s*(\d+)', raw)  # inline form
+            if m:
+                val = int(m.group(1)); break
+        continue
+    if in_chain:
+        m = re.match(r'^\s+max_parallel\s*:\s*(\d+)', raw)
+        if m:
+            val = int(m.group(1)); break
+if val is None:
+    val = default
+print(max(1, min(8, val)))
+PY
+}
+
 # ─── Python JSON helper ──────────────────────────────────────────────────
-# Uses python3 for reads/partial updates (per research.md R4).
+# Uses python3 for reads and partial updates of the JSON state.
 # All writes go through python3 to build a canonical pretty-printed object,
 # then chain_run_write_state_atomic renames it into place.
 
 py_build_initial_state() {
-    # Args: run_id ids_json_array brief_path_or_empty ids_raw
+    # Args: run_id ids_json_array brief_path_or_empty ids_raw deps_json_or_empty max_parallel
     local run_id="$1"; local ids_json="$2"; local brief_path="$3"; local ids_raw="$4"
+    local deps_json="$5"; local max_parallel="$6"
     local now; now=$(chain_run_iso8601_now)
-    python3 - "$run_id" "$ids_json" "$brief_path" "$now" "$ids_raw" <<'PY'
+    python3 - "$run_id" "$ids_json" "$brief_path" "$now" "$ids_raw" "$deps_json" "$max_parallel" <<'PY'
 import json, sys
-run_id, ids_json, brief_path, now, ids_raw = sys.argv[1:6]
+run_id, ids_json, brief_path, now, ids_raw, deps_json, max_parallel = sys.argv[1:8]
 ids = json.loads(ids_json)
 if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
     print(json.dumps({"error": "ids must be a JSON array of strings", "code": "ERR_BAD_INPUT"}), file=sys.stderr)
     sys.exit(2)
+# Concurrency cap: default 2, clamp 1-8 (FR-002 — clamp, never error).
+try:
+    mp = int(max_parallel)
+except (TypeError, ValueError):
+    mp = 2
+mp = max(1, min(8, mp))
+# In-run dependency edges: {ticket: [blocker, ...]} restricted to the run set.
+idset = set(ids)
+blocked_by = {tid: [] for tid in ids}
+if deps_json:
+    try:
+        deps = json.loads(deps_json)
+    except Exception:
+        print(json.dumps({"error": "deps must be a JSON object", "code": "ERR_BAD_INPUT"}), file=sys.stderr)
+        sys.exit(2)
+    if not isinstance(deps, dict):
+        print(json.dumps({"error": "deps must be a JSON object", "code": "ERR_BAD_INPUT"}), file=sys.stderr)
+        sys.exit(2)
+    for tid, blockers in deps.items():
+        if tid not in idset:
+            print(json.dumps({"error": f"deps endpoint not in run: {tid}", "code": "ERR_DEP_ENDPOINT_NOT_IN_RUN"}), file=sys.stderr)
+            sys.exit(2)
+        if not isinstance(blockers, list):
+            print(json.dumps({"error": f"deps[{tid}] must be a list", "code": "ERR_BAD_INPUT"}), file=sys.stderr)
+            sys.exit(2)
+        seen = []
+        for b in blockers:
+            if b not in idset:
+                print(json.dumps({"error": f"deps blocker not in run: {b}", "code": "ERR_DEP_ENDPOINT_NOT_IN_RUN"}), file=sys.stderr)
+                sys.exit(2)
+            if b == tid:
+                print(json.dumps({"error": f"ticket blocks itself: {tid}", "code": "ERR_DEP_CYCLE"}), file=sys.stderr)
+                sys.exit(2)
+            if b not in seen:
+                seen.append(b)
+        blocked_by[tid] = seen
+# Cycle detection over blocked_by (DFS with gray/black colors).
+WHITE, GRAY, BLACK = 0, 1, 2
+color = {tid: WHITE for tid in ids}
+def visit(n, stack):
+    color[n] = GRAY
+    for m in blocked_by.get(n, []):
+        if color[m] == GRAY:
+            print(json.dumps({"error": "circular blocked_by among in-run tickets: " + " -> ".join(stack + [n, m]), "code": "ERR_DEP_CYCLE"}), file=sys.stderr)
+            sys.exit(2)
+        if color[m] == WHITE:
+            visit(m, stack + [n])
+    color[n] = BLACK
+for tid in ids:
+    if color[tid] == WHITE:
+        visit(tid, [])
 tickets = {
     tid: {
         "status": "not_started",
@@ -96,6 +188,7 @@ tickets = {
         "started_at": None,
         "finished_at": None,
         "open_questions": [],
+        "blocked_by": blocked_by[tid],
     }
     for tid in ids
 }
@@ -107,6 +200,7 @@ state = {
     "terminal_reason": None,
     "ticket_ids": ids,
     "current_index": 0,
+    "max_parallel": mp,
     "epic_brief_path": brief_path if brief_path else None,
     "ids_raw": ids_raw if ids_raw else None,
     "tickets": tickets,
@@ -144,6 +238,8 @@ elif status == "skipped":
     if old_status != "not_started":
         print(json.dumps({"error": f"illegal transition: {old_status} -> skipped (only legal from not_started)", "code": "ERR_BAD_TRANSITION"}), file=sys.stderr)
         sys.exit(2)
+elif status == "committed" and old_status == "committed" and commit_sha and commit_sha != t.get("commit_sha"):
+    pass  # re-record an amended commit; see the commit_sha validation below
 elif status in RANK:
     if old_status not in RANK or RANK[status] != RANK[old_status] + 1:
         print(json.dumps({"error": f"illegal transition: {old_status} -> {status}", "code": "ERR_BAD_TRANSITION"}), file=sys.stderr)
@@ -154,7 +250,7 @@ if pr and status not in ("pushed", "merged", "completed"):
     sys.exit(2)
 # commit_sha validation.
 existing_sha = t.get("commit_sha")
-if commit_sha and existing_sha and commit_sha != existing_sha:
+if commit_sha and existing_sha and commit_sha != existing_sha and not (status == "committed" and old_status == "committed"):
     print(json.dumps({"error": f"commit_sha is immutable (existing={existing_sha}, new={commit_sha})", "code": "ERR_COMMIT_SHA_IMMUTABLE"}), file=sys.stderr)
     sys.exit(2)
 if status == "committed" and not (commit_sha or existing_sha):
@@ -292,6 +388,59 @@ print(json.dumps(state, indent=2))
 PY
 }
 
+py_next_ready() {
+    # Args: state_json
+    # Pure scheduler read: which tickets to spawn now, which are running, which
+    # are blocked by a still-pending or failed in-run dependency, free slots.
+    # Chain status model (vs band): a blocker unblocks its dependent only at
+    # merged/completed, because the dependent's worktree is cut from origin/dev.
+    python3 - "$1" <<'PY'
+import json, sys
+state = json.loads(sys.argv[1])
+if state.get("status") != "in_progress":
+    print(json.dumps({"error": f"run is already closed (status={state.get('status')})", "code": "ERR_RUN_CLOSED"}), file=sys.stderr)
+    sys.exit(6)
+ids = state["ticket_ids"]
+tickets = state["tickets"]
+mp = int(state.get("max_parallel", 2))
+
+DEP_SATISFIED = ("merged", "completed")
+DEP_DEAD = ("failed",)
+
+def blockers(tid):
+    return tickets[tid].get("blocked_by", []) or []
+
+running = [i for i in ids if tickets[i].get("status") == "in_progress"]
+not_started = [i for i in ids if tickets[i].get("status") == "not_started"]
+
+dep_failed = [
+    i for i in not_started
+    if any(tickets[d].get("status") in DEP_DEAD for d in blockers(i))
+]
+spawn_eligible = [
+    i for i in not_started
+    if i not in dep_failed
+    and all(tickets[d].get("status") in DEP_SATISFIED for d in blockers(i))
+]
+# Blocked = not_started, not dep_failed, with >=1 blocker still pending.
+blocked = [i for i in not_started if i not in dep_failed and i not in spawn_eligible]
+slots = max(0, mp - len(running))
+spawn = spawn_eligible[:slots]
+# A committed or pushed blocker still moves to merged, so it is not a deadlock.
+in_flight = [i for i in ids if tickets[i].get("status") in ("in_progress", "committed", "pushed")]
+# Defensive deadlock signal (the init-time cycle check normally prevents this).
+deadlock = bool(not_started) and not spawn_eligible and not in_flight and not dep_failed
+print(json.dumps({
+    "spawn": spawn,
+    "running": running,
+    "dep_failed": dep_failed,
+    "blocked": blocked,
+    "slots": slots,
+    "deadlock": deadlock,
+}, indent=2))
+PY
+}
+
 # ─── Subcommand: parse-range ─────────────────────────────────────────────
 
 sub_parse_range() {
@@ -366,8 +515,10 @@ sub_parse_range() {
         esac
     done
 
-    if (( ${#deduped[@]} > 8 )); then
-        err_json "ERR_COUNT_EXCEEDED" "Range resolves to ${#deduped[@]} tickets. Maximum is 8. Break the range into smaller batches for quality reasons."
+    local max_tickets
+    max_tickets=$(chain_run_max_tickets)
+    if (( ${#deduped[@]} > max_tickets )); then
+        err_json "ERR_COUNT_EXCEEDED" "Range resolves to ${#deduped[@]} tickets. Maximum is ${max_tickets}. Break the range into smaller batches for quality reasons."
         return 2
     fi
 
@@ -385,18 +536,24 @@ sub_parse_range() {
 # ─── Subcommand: init ────────────────────────────────────────────────────
 
 sub_init() {
-    local ids_json="" brief_path="" ids_raw=""
+    local ids_json="" brief_path="" ids_raw="" deps_json="" max_parallel=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --ids) ids_json="$2"; shift 2 ;;
             --brief) brief_path="$2"; shift 2 ;;
             --ids-raw) ids_raw="$2"; shift 2 ;;
+            --deps) deps_json="$2"; shift 2 ;;
+            --max-parallel) max_parallel="$2"; shift 2 ;;
             *) err_json "ERR_BAD_INPUT" "unknown flag: $1"; return 2 ;;
         esac
     done
     if [[ -z "$ids_json" ]]; then
         err_json "ERR_BAD_INPUT" "--ids is required"
         return 2
+    fi
+    # Default the concurrency cap from chain.max_parallel when not supplied.
+    if [[ -z "$max_parallel" ]]; then
+        max_parallel=$(parse_chain_max_parallel "$REPO_ROOT/tricycle.config.yml")
     fi
     # Validate brief path early.
     if [[ -n "$brief_path" && ! -f "$brief_path" ]]; then
@@ -417,8 +574,10 @@ sub_init() {
         err_json "ERR_COUNT_ZERO" "ids array is empty"
         return 2
     fi
-    if (( count > 8 )); then
-        err_json "ERR_COUNT_EXCEEDED" "ids array has $count > 8 tickets"
+    local max_tickets
+    max_tickets=$(chain_run_max_tickets)
+    if (( count > max_tickets )); then
+        err_json "ERR_COUNT_EXCEEDED" "ids array has $count > $max_tickets tickets"
         return 2
     fi
 
@@ -437,8 +596,14 @@ sub_init() {
         final_brief_path="specs/.chain-runs/$run_id/epic-brief.md"
     fi
 
-    local state_json
-    state_json=$(py_build_initial_state "$run_id" "$ids_json" "$final_brief_path" "$ids_raw")
+    local state_json rc
+    # `&& rc=0 || rc=$?` guards set -e so a validation failure (bad deps /
+    # cycle) doesn't abort before we can remove the just-mkdir'd run dir.
+    state_json=$(py_build_initial_state "$run_id" "$ids_json" "$final_brief_path" "$ids_raw" "$deps_json" "$max_parallel") && rc=0 || rc=$?
+    if [[ ${rc:-0} -ne 0 ]]; then
+        rm -rf "$run_dir"   # don't leave an empty orphan run dir behind
+        return "$rc"
+    fi
     chain_run_write_state_atomic "$run_dir" "$state_json"
 
     local brief_out="null"
@@ -606,6 +771,27 @@ sub_progress() {
     cat "$pf"
 }
 
+# ─── Subcommand: next-ready ──────────────────────────────────────────────
+
+sub_next_ready() {
+    local run_id=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --run-id) run_id="$2"; shift 2 ;;
+            *) err_json "ERR_BAD_INPUT" "unknown flag: $1"; return 2 ;;
+        esac
+    done
+    if [[ -z "$run_id" ]]; then
+        err_json "ERR_BAD_INPUT" "--run-id is required"
+        return 2
+    fi
+    local run_dir state_json rc
+    run_dir=$(chain_run_dir_for_id "$run_id")
+    state_json=$(chain_run_read_state "$run_dir"); rc=$?
+    if [[ $rc -ne 0 ]]; then return $rc; fi
+    py_next_ready "$state_json"
+}
+
 # ─── Dispatch ────────────────────────────────────────────────────────────
 
 usage() {
@@ -615,8 +801,13 @@ Usage: chain-run.sh <subcommand> [flags]
 Subcommands:
   parse-range <arg>        Parse range-or-list into deduped ticket IDs
   init --ids <json> [--brief <path>] [--ids-raw <string>]
-                           Create a new chain run
+       [--deps <json>] [--max-parallel <N>]
+                           Create a new chain run. --deps is a JSON object
+                           {ticket: [blocker,...]} of in-run blocked_by edges;
+                           --max-parallel defaults to chain.max_parallel (2).
   get --run-id <id>        Read state.json for a run
+  next-ready --run-id <id> Scheduler read: which tickets to spawn/continue,
+                           which are running/blocked/dep_failed, free slots
   update-ticket --run-id <id> --ticket <tid> --status <s> [options]
                            Transition one ticket
   list-interrupted         List non-terminal runs (hides dismissed runs)
@@ -638,6 +829,7 @@ main() {
         parse-range)       sub_parse_range "$@" ;;
         init)              sub_init "$@" ;;
         get)                sub_get "$@" ;;
+        next-ready)        sub_next_ready "$@" ;;
         update-ticket)     sub_update_ticket "$@" ;;
         list-interrupted)  sub_list_interrupted "$@" ;;
         dismiss)           sub_dismiss "$@" ;;

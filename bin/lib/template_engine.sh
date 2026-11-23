@@ -33,17 +33,19 @@ render_template() {
         expanded="${expanded//\{\{app.dev\}\}/$(cfg_get "apps.$i.dev")}"
         expanded="${expanded//\{\{app.port\}\}/$(cfg_get "apps.$i.port")}"
 
-        # Handle inline {{#if app.test}}...{{/if}}
-        local test_val
-        test_val=$(cfg_get "apps.$i.test")
-        local close_if='{{/if}}'
-        if [ -n "$test_val" ]; then
-          expanded="${expanded//\{\{#if app.test\}\}/}"
-          expanded="${expanded//$close_if/}"
-        else
-          # Remove {{#if app.test}}...{{/if}} content (inline, same line)
-          expanded=$(printf '%s' "$expanded" | sed 's/{{#if app\.test}}[^{}]*{{\/if}}//g')
-        fi
+        # Inline {{#if app.<field>}}...{{/if}}: drop the span when the field is
+        # empty, else drop only the markers.
+        local field close_if='{{/if}}'
+        for field in lint test build dev port; do
+          if [ -z "$(cfg_get "apps.$i.$field")" ]; then
+            expanded=$(printf '%s' "$expanded" | sed "s/{{#if app\.$field}}[^{}]*{{\/if}}//g")
+          fi
+        done
+        for field in lint test build dev port; do
+          expanded="${expanded//\{\{#if app.$field\}\}/}"
+        done
+        expanded="${expanded//$close_if/}"
+        expanded="${expanded%$'\n'}"$'\n'
 
         content="${content}${expanded}"
         i=$((i + 1))

@@ -62,5 +62,18 @@ fi
 git -C "$TMP" check-ignore -q .claude/settings.local.json || { echo "FAIL: .claude/settings.local.json is not ignored (should be)"; exit 1; }
 # tricycle internals must stay ignored
 git -C "$TMP" check-ignore -q .trc/foo || { echo "FAIL: .trc/foo is not ignored (should be)"; exit 1; }
+# .claude/agents/ (the spec validator lives there) must be COMMITTABLE
+mkdir -p "$TMP/.claude/agents" && : > "$TMP/.claude/agents/trc-spec-validator.md"
+if git -C "$TMP" check-ignore -q .claude/agents/trc-spec-validator.md; then
+  echo "FAIL: .claude/agents/ is ignored (should be committable)"; exit 1
+fi
+
+# 4. An older whitelist block without the agents rule gets it added, once
+OLD="$(mktemp -d)"; git -C "$OLD" init -q
+cp "$TMP/tricycle.config.yml" "$OLD/"
+printf '.claude/*\n!.claude/settings.json\n!.claude/commands/\n!.claude/hooks/\n!.claude/skills/\n' > "$OLD/.gitignore"
+(cd "$OLD" && "$CLI" generate gitignore >/dev/null && "$CLI" generate gitignore >/dev/null)
+[ "$(grep -cx '!\.claude/agents/' "$OLD/.gitignore")" = 1 ] || { echo "FAIL: older block did not get exactly one !.claude/agents/ rule"; rm -rf "$OLD"; exit 1; }
+rm -rf "$OLD"
 
 echo "PASS"

@@ -1,7 +1,7 @@
 #!/bin/bash
 # UserPromptSubmit hook (TRI-31): rename the current Claude Code session to
-# match the branch/worktree name whenever the user kicks off /trc.specify,
-# /trc.headless, or /trc.chain. Fires before the agent sees the prompt, so
+# match the branch/worktree name whenever the user kicks off /trc.plan, /trc.implement,
+# or /trc.chain. Fires before the agent sees the prompt, so
 # the "first thing done" rule (FR-001) is satisfied structurally.
 #
 # Emits {"hookSpecificOutput": {"sessionTitle": "<label>"}} on match.
@@ -21,7 +21,7 @@ PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty' 2>/dev/null)
 # Strip leading whitespace; only act on kickoff commands.
 TRIMMED="${PROMPT#"${PROMPT%%[![:space:]]*}"}"
 case "$TRIMMED" in
-    /trc.specify*|/trc.headless*|/trc.chain*|/trc.band*) ;;
+    /trc.plan*|/trc.implement*|/trc.chain*|/trc.band*) ;;
     *) exit 0 ;;
 esac
 
@@ -160,7 +160,7 @@ case "$COMMAND" in
     /trc.band)
         LABEL=$(derive_band_label "$ARGSTR")
         ;;
-    /trc.specify|/trc.headless)
+    /trc.plan|/trc.implement)
         LABEL=$(derive_feature_label "$ARGSTR")
         ;;
 esac

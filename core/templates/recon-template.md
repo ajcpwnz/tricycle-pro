@@ -23,7 +23,7 @@
 ## Sub-Issues *(mandatory)*
 
 <!-- One row per sub-issue fetched from the parent. Complexity drives model
-     assignment; wave assignment comes from the Dependency Roadmap below. -->
+     assignment. Wave assignment comes from the Dependency Roadmap below. -->
 
 | ID | Title | One-line scope | Complexity | Model | Wave |
 |----|-------|----------------|------------|-------|------|
@@ -83,10 +83,10 @@
 
 ## Verification Strategy *(mandatory)*
 
-<!-- Per the trc.band batching heuristics: full suite per sub-issue when high
-     complexity, sole wave member, or shared-infrastructure touching;
-     otherwise scoped checks per issue + full suite per wave in the
-     integration worktree. Name the decision per issue. -->
+<!-- Per the trc.band batching heuristics: run the full suite per sub-issue
+     for high complexity, a sole wave member, or a change to shared
+     infrastructure. Otherwise run scoped checks per issue and the full suite
+     per wave in the integration worktree. Name the decision per issue. -->
 
 - **[PREFIX-NNN]**: [per-issue full suite | scoped checks, verified with wave N batch]
 - **Wave [N] batch verification**: [what runs after the wave merges]
@@ -96,7 +96,7 @@
 
 - **Merge order**: [IDs in roadmap order]
 - **Expected conflict hotspots**: [files/modules, or "None expected"]
-- **Rebase policy**: on conflict the affected worker rebases onto `band/[PREFIX-NNN]` and re-verifies; capped at 2 rounds per sub-issue, then the band pauses for the user
+- **Rebase policy**: on conflict, the affected worker rebases onto `band/[PREFIX-NNN]` and re-verifies. The cap is 2 rounds per sub-issue. Then the band pauses for the user
 
 ## Risks & Open Questions
 

@@ -83,29 +83,29 @@ ISSUES='[
  {"id":"TRI-9302","title":"B","branch":"b2","worktree":"w2","complexity":"low","model":"sonnet","wave":0,"depends_on":[]},
  {"id":"TRI-9303","title":"C","branch":"b3","worktree":"w3","complexity":"low","model":"sonnet","wave":1,"depends_on":["TRI-9301"]}
 ]'
-INIT=$(bash "$BAND" init --parent TRI-9300 --issues "$ISSUES" --recon "$RECON" --chain '["specify","plan","implement"]' --max-parallel 2)
+INIT=$(bash "$BAND" init --parent TRI-9300 --issues "$ISSUES" --recon "$RECON" --max-parallel 2)
 rm -f "$RECON"
 RID=$(echo "$INIT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])')
 trap 'rm -rf "$REPO_ROOT/specs/.band-runs/$RID"' EXIT
 
-expect_err ERR_ISSUE_NOT_IN_RUN "step on unknown issue" -- update-step --run-id "$RID" --issue TRI-9999 --step specify --step-status running
+expect_err ERR_ISSUE_NOT_IN_RUN "step on unknown issue" -- update-step --run-id "$RID" --issue TRI-9999 --step plan --step-status running
 expect_err ERR_BAD_STEP "unknown step" -- update-step --run-id "$RID" --issue TRI-9301 --step tasks --step-status running
 expect_err ERR_BAD_STEP_TRANSITION "skip ahead in chain" -- update-step --run-id "$RID" --issue TRI-9301 --step implement --step-status running
-expect_err ERR_BAD_STEP_TRANSITION "complete a non-running step" -- update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status step_complete
+expect_err ERR_BAD_STEP_TRANSITION "complete a non-running step" -- update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status step_complete
 
-bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status running >/dev/null
-expect_err ERR_BLOCKED_REQUIRES_QUESTION "blocked without question" -- update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status blocked
+bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status running >/dev/null
+expect_err ERR_BLOCKED_REQUIRES_QUESTION "blocked without question" -- update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status blocked
 
 # blocked -> running resume, running -> running respawn, failed -> running retry are legal.
-bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status blocked --question "Which way?" >/dev/null
-bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status running >/dev/null
-bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status running >/dev/null
-bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status failed >/dev/null
-bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status running >/dev/null
-bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step specify --step-status step_complete >/dev/null
+bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status blocked --question "Which way?" >/dev/null
+bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status running >/dev/null
+bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status running >/dev/null
+bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status failed >/dev/null
+bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status running >/dev/null
+bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step plan --step-status step_complete >/dev/null
 
 # Walk TRI-9301 to the end of its chain for issue-status checks.
-for s in plan implement; do
+for s in implement; do
     bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step "$s" --step-status running >/dev/null
     bash "$BAND" update-step --run-id "$RID" --issue TRI-9301 --step "$s" --step-status step_complete >/dev/null
 done
@@ -133,7 +133,7 @@ assert s["issues"]["TRI-9301"]["rebase_count"] == 2
 # blocked_by_failure only from pending; terminal issues freeze their steps.
 bash "$BAND" update-issue --run-id "$RID" --issue TRI-9302 --status blocked_by_failure >/dev/null
 expect_err ERR_BAD_TRANSITION "blocked_by_failure twice" -- update-issue --run-id "$RID" --issue TRI-9302 --status blocked_by_failure
-expect_err ERR_ISSUE_TERMINAL "step on terminal issue" -- update-step --run-id "$RID" --issue TRI-9302 --step specify --step-status running
+expect_err ERR_ISSUE_TERMINAL "step on terminal issue" -- update-step --run-id "$RID" --issue TRI-9302 --step plan --step-status running
 
 # next-ready: pause empties spawn/continue; dep_failed lists dependents of failed deps.
 bash "$BAND" pause --run-id "$RID" --issue TRI-9303 --reason test >/dev/null
@@ -148,7 +148,7 @@ bash "$BAND" resume --run-id "$RID" >/dev/null
 # After close, every mutation and the scheduler read are rejected.
 bash "$BAND" close --run-id "$RID" --terminal-status aborted --reason test >/dev/null
 expect_err ERR_RUN_CLOSED "update-issue after close" -- update-issue --run-id "$RID" --issue TRI-9303 --status failed
-expect_err ERR_RUN_CLOSED "update-step after close" -- update-step --run-id "$RID" --issue TRI-9303 --step specify --step-status running
+expect_err ERR_RUN_CLOSED "update-step after close" -- update-step --run-id "$RID" --issue TRI-9303 --step plan --step-status running
 expect_err ERR_RUN_CLOSED "next-ready after close" -- next-ready --run-id "$RID"
 
 echo "band-errors: OK"
