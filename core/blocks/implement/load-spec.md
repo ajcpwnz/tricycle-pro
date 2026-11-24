@@ -13,6 +13,10 @@ Read `spec.store` and `spec.dir` from `tricycle.config.yml`. The input names the
 spec: a path to a `.md` file, a ticket id or tracker URL, or a spec id under
 `spec.dir`. Read a ticket with the tracker's MCP, including its comments.
 
+With no input, use the spec that `/trc.plan` stored in this session. If the session
+has no such spec, or has more than one, ask the user with `AskUserQuestion` which
+spec to implement.
+
 In obsidian mode, read the note in `<spec.dir>` in the vault with the read tool of
 the `obsidian` MCP server. In mcpvault, this tool is `read_note`. The note name
 follows `spec.obsidian.note_name`. If the `obsidian` server is not connected, stop.
