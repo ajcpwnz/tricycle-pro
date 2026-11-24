@@ -25,11 +25,14 @@ gate = [e for e in hooks for h in e["hooks"] if h["command"].endswith("/style-ga
 assert len(gate) == 1, "style-gate not registered once"
 assert "Write" in gate[0]["matcher"] and "Bash" in gate[0]["matcher"] and "save" in gate[0]["matcher"], gate[0]["matcher"]
 assert json.load(open(d + "/.caveman.json")) == {"defaultMode": "ultracave"}
+conf = open(d + "/.claude/hooks/.session-context.conf").read().splitlines()
+assert ".claude/skills/ste-short/SKILL.md" in conf, "ste-short skill not injected at session start"
 PY
 
 (cd "$TMP/off" && "$CLI" generate settings >/dev/null)
 [ ! -e "$TMP/off/.caveman.json" ] || fail "no style.chat, but .caveman.json written"
 ! grep -q style-gate "$TMP/off/.claude/settings.json" || fail "no style.artifacts, but style-gate registered"
+! grep -qs ste-short "$TMP/off/.claude/hooks/.session-context.conf" || fail "no style.artifacts, but ste-short injected"
 
 if (cd "$TMP/bad" && "$CLI" generate settings >/dev/null 2>&1); then fail "unknown style.chat mode accepted"; fi
 

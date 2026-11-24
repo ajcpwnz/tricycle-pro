@@ -1,6 +1,9 @@
 #!/bin/bash
-# PreToolUse(Write|Edit|Bash|tracker issue and comment tools): persisted prose
-# passes the ASD-STE100 linter before it lands.
+# PreToolUse(Write|Edit|Bash|tracker issue and comment tools): lints persisted
+# prose with the ASD-STE100 linter. It never blocks: a block makes the agent
+# resend the whole text. It lets the write through and names the flagged
+# sentences, so the fix is one small Edit. The rules reach the agent first
+# through the session context (the ste-short skill), so most drafts pass.
 #
 # Checked: Markdown written with Write or Edit, `gh pr create|edit` bodies, and
 # tracker issue and comment text. Commit messages are not checked. Only the
@@ -134,11 +137,9 @@ except Exception:
 
 if findings:
     lines = "\n".join(f"  - {v['rule']}: \"{v.get('match', '')}\" — {v.get('message', '')}" for v in findings[:12])
-    reason = ("BLOCKED: this prose breaks ASD-STE100 rules (asd-ste100 linter):\n" + lines +
-              "\n\nRewrite only the flagged sentences, then retry. Follow the ste-short skill: "
-              "one fact per sentence (20 words for steps, 25 for descriptions), plain verbs, "
-              "no phrasal verbs, no nominalizations, no marketing words, no semicolons. "
-              "Keep every hedge, number, negation and identifier exact.")
-    print(json.dumps({"decision": "block", "reason": reason}))
+    note = ("STYLE: this write went through, but its prose breaks ASD-STE100 rules (asd-ste100 linter):\n" + lines +
+            "\n\nAfter it lands, fix only the flagged sentences with one small Edit each. "
+            "Do not rewrite or resend the whole text.")
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
 sys.exit(0)
 PY

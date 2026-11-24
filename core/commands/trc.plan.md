@@ -10,10 +10,53 @@ $ARGUMENTS
 ```
 
 
+## Store setup
+
+Do this step first. Ask fixed questions with `AskUserQuestion`, in the order
+below, with the options below. Write each answer to `tricycle.config.yml` at once.
+Do not ask a question again when its key is already in `tricycle.config.yml`.
+
+1. **Store.** Ask only when an `obsidian` MCP server is connected and the config has no `spec.store` key.
+   The options are `repo`, `linear` and `obsidian`. Write the answer to `spec.store`.
+2. **Vault layout.** Ask these four questions as one group. Ask them only when
+   `spec.store` is `obsidian` and the config has no `spec.obsidian` block.
+   - Vault folder for the specs, relative to the vault root. The current
+     `spec.dir` is one option. Write the answer to `spec.dir`.
+   - `spec.obsidian.note_name`: `id` gives `<id>.md`. `id-title` gives `<id> <title>.md`.
+   - `spec.obsidian.frontmatter`: `none` writes no frontmatter. `properties`
+     writes `status`, `source` and `tags: [spec]`.
+   - `spec.obsidian.done`: `stay` keeps the note in `spec.dir` after merge.
+     `move` moves it to `<spec.dir>/done`.
+
+Write the answers in this form. Keep the other keys under `spec`.
+
+```yaml
+spec:
+  store: obsidian
+  dir: <vault folder>
+  obsidian:
+    note_name: id        # id | id-title
+    frontmatter: none    # none | properties
+    done: stay           # stay | move
+```
+
+If no question is due, go to the next section.
+
+An unattended run does not ask. In a `/trc.chain` or `/trc.band` worker, if a
+question is due, stop and report the question.
+
+
 ## Resolve the input
 
-Read `spec.store` (`repo` or `linear`, default `repo`) and `spec.dir` (default
-`docs/specs`) from `tricycle.config.yml`.
+Read `spec.store` (`repo`, `linear` or `obsidian`, default `repo`) and `spec.dir`
+(default `docs/specs`) from `tricycle.config.yml`.
+
+In obsidian mode, the spec is a note in the vault, and `spec.dir` is relative to
+the vault root. Read, write and patch the note with the tools of the `obsidian` MCP
+server. In mcpvault, these tools are `read_note`, `write_note` and `patch_note`.
+If the `obsidian` server is not connected, stop. Tell the user to run
+`tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart Claude Code.
+Do not fall back to a repo file.
 
 Classify the user input:
 
@@ -25,7 +68,9 @@ Classify the user input:
 
 The input is an **existing spec** when its text already has the sections
 `Analysis`, `Proposed Solution` and `Checklist`. In repo mode, a ticket id whose
-file `<spec.dir>/<TICKET-ID>.md` exists is an existing spec too.
+file `<spec.dir>/<TICKET-ID>.md` exists is an existing spec too. In obsidian mode,
+a spec id with a note in `<spec.dir>` in the vault is an existing spec too. The
+note name follows `spec.obsidian.note_name`.
 
 - **Existing spec:** do not rewrite it. Skip to the validation section, then the
   store section. Fix only what validation finds.
@@ -105,18 +150,26 @@ stale nodes after you've mutated the tree.
 
 ## Write the spec
 
-Fill `.trc/templates/spec-template.md`. Keep it compact: one spec, three parts.
+Fill `.trc/templates/spec-template.md`. Keep it compact: the spec says what to
+build and why, not each edit. The implementer reads the code and makes the small
+choices.
 
-- **Analysis:** the problem, the current behavior with `path:line` references, the
-  constraints, and what is out of scope.
+- **Analysis:** the problem, the current behavior with `path:line` references to
+  source files, the constraints, and what is out of scope.
 - **Proposed Solution:** the approach, each decision with the alternative it beat,
   and the risks.
 - **Checklist:** one line per outcome, each naming its proof. An outcome is
   something a reviewer can observe ("the export endpoint returns 403 for a viewer").
   An edit instruction ("change line 40") is not an outcome.
 - **Open Questions:** must be empty before the spec can pass.
+- **Implementer Notes:** leave empty. Validation fills it.
 
 Set `Source:` to the ticket id, URL or a one-line summary of the request.
+
+### Check the draft
+
+Read `.trc/templates/spec-rubric.md`. The validator uses the same rubric. Do its
+writer checks on the draft, with tools, and keep the draft in its size limit.
 
 
 ## Validation
@@ -125,16 +178,23 @@ Run the `trc-spec-validator` agent with model `opus`. Give it the
 full spec text and the repository root, nothing else: no summary of your own
 reasoning.
 
-- **PASS:** set `Status: validated` and go to the store section.
-- **FAIL:** fix each finding.
-  - Truthfulness and quality findings: fix the spec from the code.
-  - Ambiguity findings that only the user can settle: ask with `AskUserQuestion`,
-    then write the answer into the spec.
+- **PASS:** copy each handoff, as the validator wrote it, into the
+  `## Implementer Notes` section of the spec. Do not fix handoffs here and do not
+  run the validator again.
+- **FAIL:** fix each blocker from the code. A blocker that only the user can
+  settle: ask with `AskUserQuestion`, then write the answer into the spec. Then
+  run the validator again on the full spec, to test the fix. After three rounds
+  that fail, stop and show the user the blockers.
 
-  Then run a fresh validator again. After three failed rounds, stop: keep
-  `Status: draft`, store the spec, and report the remaining findings.
+Then set the status to `Status: validated @ <sha>`. The `<sha>` is the output of
+`git rev-parse --short HEAD`. Go to the store section.
 
-An existing spec goes through the same loop. Change only what a finding names.
+An existing spec goes through the same validation. Change only what a blocker
+names.
+
+In obsidian mode, write the Implementer Notes and the `Status:` line with the
+patch tool of the `obsidian` server. With `spec.obsidian.frontmatter: properties`,
+set the `status` property to the same value.
 
 
 ## Store
@@ -145,6 +205,13 @@ An existing spec goes through the same loop. Change only what a finding names.
   from a ticket, keep the original request below the spec under
   `## Original Request`. For a request with no ticket, create one with the tracker's
   MCP.
+- **`spec.store: obsidian`:** write the note in `<spec.dir>` in the vault with the
+  write tool of the `obsidian` server. The note name follows
+  `spec.obsidian.note_name`: `id` gives `<spec id>.md`, and `id-title` gives
+  `<spec id> <title>.md`. With `spec.obsidian.frontmatter: properties`, start the
+  note with the properties `status`, `source` and `tags: [spec]`. With `none`,
+  write no frontmatter. If a ticket exists, add a comment on it with the
+  vault-relative path of the note. Do not create a ticket.
 
 Report the spec location, its status, and the validator verdict. Do not start
 implementation: that is `/trc.implement <spec id>`.

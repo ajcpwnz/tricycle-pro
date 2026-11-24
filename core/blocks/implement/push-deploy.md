@@ -78,7 +78,7 @@ Present a summary to the user:
 
 ### 5b. Delete blocking relations (after a checked merge)
 
-After a successful merge, find the ticket. Use the spec Source line if it has a ticket id. If `spec.store` is `linear`, use the ticket that holds the spec. If there is no ticket, skip this step.
+After a successful merge, find the ticket. Use the spec Source line if it has a ticket id. This also applies in obsidian mode. If `spec.store` is `linear`, use the ticket that holds the spec. If there is no ticket, skip this step.
 
 1. Use the tracker MCP to get the ticket relations, and find the tickets that it blocks.
 2. Delete all of these blocking relations, so that the work that follows is not blocked. In Linear, use the `removeBlocks` field.
@@ -88,7 +88,7 @@ After a successful merge, find the ticket. Use the spec Source line if it has a 
 **IMPORTANT**: Do NOT clean up artifacts until the PR is successfully merged. If merge has not happened, skip this step entirely.
 
 After you check that the merge happened:
-1. Delete the scratch directory `specs/{branch}/` (local testing evidence), if it exists. The spec itself stays: in repo mode it is committed under `spec.dir`.
+1. Delete the scratch directory `specs/{branch}/` (local testing evidence), if it exists. The spec itself stays: in repo mode it is committed under `spec.dir`. In obsidian mode it stays in the vault and is not part of the commit. With `spec.obsidian.done: move`, move the note to `<spec.dir>/done` with the `obsidian` server.
 2. If in a worktree (`.git` is a file), note that the worktree-cleanup block (if active) handles worktree removal separately.
 3. If NOT in a worktree, switch back to the base branch and delete the feature branch locally.
 

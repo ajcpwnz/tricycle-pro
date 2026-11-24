@@ -16,6 +16,13 @@ status_scan() {
   store=$(cfg_get_or "spec.store" "repo")
   dir=$(cfg_get_or "spec.dir" "docs/specs")
 
+  if [ "$store" = "obsidian" ]; then
+    echo ""
+    echo "  Specs live in the Obsidian vault at \$OBSIDIAN_VAULT_PATH, folder $dir (spec.store: obsidian). Check them there."
+    echo ""
+    return 0
+  fi
+
   if [ "$store" != "repo" ]; then
     echo ""
     echo "  Specs live in the tracker (spec.store: $store). Check them there."

@@ -10,11 +10,53 @@ $ARGUMENTS
 ```
 
 
+## Store setup
+
+Do this step first. Ask fixed questions with `AskUserQuestion`, in the order
+below, with the options below. Write each answer to `tricycle.config.yml` at once.
+Do not ask a question again when its key is already in `tricycle.config.yml`.
+
+1. **Store.** Ask only when an `obsidian` MCP server is connected and the config has no `spec.store` key.
+   The options are `repo`, `linear` and `obsidian`. Write the answer to `spec.store`.
+2. **Vault layout.** Ask these four questions as one group. Ask them only when
+   `spec.store` is `obsidian` and the config has no `spec.obsidian` block.
+   - Vault folder for the specs, relative to the vault root. The current
+     `spec.dir` is one option. Write the answer to `spec.dir`.
+   - `spec.obsidian.note_name`: `id` gives `<id>.md`. `id-title` gives `<id> <title>.md`.
+   - `spec.obsidian.frontmatter`: `none` writes no frontmatter. `properties`
+     writes `status`, `source` and `tags: [spec]`.
+   - `spec.obsidian.done`: `stay` keeps the note in `spec.dir` after merge.
+     `move` moves it to `<spec.dir>/done`.
+
+Write the answers in this form. Keep the other keys under `spec`.
+
+```yaml
+spec:
+  store: obsidian
+  dir: <vault folder>
+  obsidian:
+    note_name: id        # id | id-title
+    frontmatter: none    # none | properties
+    done: stay           # stay | move
+```
+
+If no question is due, go to the next section.
+
+An unattended run does not ask. In a `/trc.chain` or `/trc.band` worker, if a
+question is due, stop and report the question.
+
+
 ## Load the spec
 
 Read `spec.store` and `spec.dir` from `tricycle.config.yml`. The input names the
 spec: a path to a `.md` file, a ticket id or tracker URL, or a spec id under
 `spec.dir`. Read a ticket with the tracker's MCP, including its comments.
+
+In obsidian mode, read the note in `<spec.dir>` in the vault with the read tool of
+the `obsidian` MCP server. In mcpvault, this tool is `read_note`. The note name
+follows `spec.obsidian.note_name`. If the `obsidian` server is not connected, stop.
+Tell the user to run `tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart Claude Code.
+Do not fall back to a repo file.
 
 If no spec with `Analysis`, `Proposed Solution` and `Checklist` exists, stop and
 tell the user to run `/trc.plan <input>` first.
@@ -22,12 +64,24 @@ tell the user to run `/trc.plan <input>` first.
 
 ## Validation gate
 
-Run the `trc-spec-validator` agent with model `opus`, giving it the
-full spec text and the repository root. Do this even when the spec says `Status: validated`: the code
-may have moved since.
+Read the status line of the spec.
 
-On FAIL, do not start. Report the findings and tell the user to run
-`/trc.plan <input>`, which revalidates and fixes the spec. Do not fix the spec here.
+- **`Status: validated @ <sha>`:** run `git diff --name-only <sha>`. If no file
+  that the spec cites is in the output, the spec is current. Start, and do not
+  run the validator.
+- **Other status, or a cited file changed:** run the `trc-spec-validator` agent
+  one time, with model `opus`. Give it the full spec text and the
+  repository root.
+
+On PASS, start. Add each new handoff to the `## Implementer Notes` section of the
+spec.
+
+In obsidian mode, write the handoffs with the patch tool of the `obsidian` server.
+The `git diff` check does not see changes to the note itself. It sees only the
+repo files that the spec cites.
+
+On FAIL, do not start. Report the blockers and tell the user to run
+`/trc.plan <input>`. Do not fix the spec here.
 
 
 ## Graphify Context
@@ -82,23 +136,27 @@ stale nodes after you've mutated the tree.
 
 1. Re-read the code the spec names. If it no longer matches the analysis, stop
    and send the user to `/trc.plan`.
-2. Work the checklist items in order. Write a failing test first wherever the
+2. Resolve each item of `## Implementer Notes` in the spec: read the code it
+   names, decide, and do it as part of the item it touches. A note that turns
+   out to break the feature as specified: stop and send the user to `/trc.plan`.
+3. Work the checklist items in order. Write a failing test first wherever the
    project has tests for that area.
-3. **Delegate to keep this context slim.** Hand an item to a worker subagent
+4. **Delegate to keep this context slim.** Hand an item to a worker subagent
    (Agent tool, model `opus`) when its work is self-contained. A
    self-contained item touches its own files and needs no decision from this
    session. Give the worker the spec, the one item, the files and its proof. Ask
    for the diff summary and the evidence back, not file dumps. Keep in this session the items
    that cut across others or need a judgment call. Workers on different items run
    in parallel only when their files do not overlap.
-4. An item is done only when its proof is observed: the command ran and printed
+5. An item is done only when its proof is observed: the command ran and printed
    the expected result, or the behavior was seen. A worker's report is a claim:
    check its diff and re-run its proof here before you mark the item. Then mark it
    `[x]` in the spec (the file in repo mode, the ticket description in linear
-   mode) with a short note of the evidence.
-5. Do not stop with an open item unless it needs something only the user holds.
+   mode, the note in obsidian mode) with a short note of the evidence.
+   Patch the note with the `obsidian` server.
+6. Do not stop with an open item unless it needs something only the user holds.
    In that case, name it and ask.
-6. Work the spec names nothing about is out of scope. Mention it, do not do it.
+7. Work the spec names nothing about is out of scope. Mention it, do not do it.
 
 
 ## Lint and test
@@ -122,6 +180,19 @@ After every checklist item is done and tests pass, before reporting completion:
 ## Push, PR & Deploy
 
 After every checklist item is done and tests pass (and the version-bump block, when enabled, has run), execute the push/PR/merge workflow:
+
+### 0. Local testing gate
+
+**MANDATORY.** Do this step only if this command contains the Local Stack Testing section (the `test-local-stack` block). Before you show a summary or ask to push, make sure that the browser evidence is on disk:
+
+1. Get the current branch: `git rev-parse --abbrev-ref HEAD`.
+2. Make sure that all of these conditions are true:
+   - The file `specs/<branch>/.local-testing-passed` exists and is not empty.
+   - There is a minimum of one browser screenshot in `specs/<branch>/local-testing/`, or the first line of the marker is `USER-APPROVED SKIP:`.
+3. **If a condition is false**: stop. Do not show a summary. Do not ask to push. Go back to Local Stack Testing, do the browser test, save the screenshots, and write the marker.
+4. **If all conditions are true**: go to step 1.
+
+Do not skip this step. Do not give yourself an exemption. Only a `USER-APPROVED SKIP:` first line, which the user approved in this session, replaces the screenshots.
 
 ### 1. Read push configuration
 
@@ -160,18 +231,34 @@ Present a summary to the user:
 ### 5. Merge (if auto_merge is true)
 
 **If `push.auto_merge` is true**:
-1. Check for merge conflicts. If conflicts exist, report them and stop. Do not force-merge.
+1. Check for merge conflicts with `gh pr view <pr-number> --json mergeable,mergeStateStatus`.
+   - If `mergeable` is `UNKNOWN`, GitHub has not calculated it yet. Wait 10 seconds and check again.
+   - If `mergeable` is `CONFLICTING`, repair the conflicts. Do not stop:
+     a. Rebase onto the target branch: `git fetch origin && git rebase origin/<pr_target>`.
+     b. For each file that has a conflict, read the two sides, decide the result, write it, and `git add` the file.
+     c. Continue the rebase: `git rebase --continue`.
+     d. Push the rebased branch: `git push --force-with-lease`.
+     e. Check `mergeable` again. If the conflicts continue after the rebase, report them and stop. The user must repair them.
+   - If `mergeable` is `MERGEABLE`, merge the PR.
+   - Do not force-merge.
 2. Merge using the configured `push.merge_strategy` via `gh pr merge`.
 3. If merge is blocked (branch protection, required reviewers), report the blocker and wait.
 
 **If `push.auto_merge` is false**: Report the PR URL and let the user handle merging.
+
+### 5b. Delete blocking relations (after a checked merge)
+
+After a successful merge, find the ticket. Use the spec Source line if it has a ticket id. This also applies in obsidian mode. If `spec.store` is `linear`, use the ticket that holds the spec. If there is no ticket, skip this step.
+
+1. Use the tracker MCP to get the ticket relations, and find the tickets that it blocks.
+2. Delete all of these blocking relations, so that the work that follows is not blocked. In Linear, use the `removeBlocks` field.
 
 ### 6. Artifact cleanup (only after a checked merge)
 
 **IMPORTANT**: Do NOT clean up artifacts until the PR is successfully merged. If merge has not happened, skip this step entirely.
 
 After you check that the merge happened:
-1. Delete the scratch directory `specs/{branch}/` (local testing evidence), if it exists. The spec itself stays: in repo mode it is committed under `spec.dir`.
+1. Delete the scratch directory `specs/{branch}/` (local testing evidence), if it exists. The spec itself stays: in repo mode it is committed under `spec.dir`. In obsidian mode it stays in the vault and is not part of the commit. With `spec.obsidian.done: move`, move the note to `<spec.dir>/done` with the `obsidian` server.
 2. If in a worktree (`.git` is a file), note that the worktree-cleanup block (if active) handles worktree removal separately.
 3. If NOT in a worktree, switch back to the base branch and delete the feature branch locally.
 

@@ -521,6 +521,17 @@ cmd_generate_settings() {
     fi=$((fi + 1))
   done
 
+  # style.artifacts: ste-short also injects the skill at session start, so the
+  # first draft of persisted prose follows the rules and the gate rarely fires.
+  if [ "$(cfg_get_or "style.artifacts" "")" = "ste-short" ]; then
+    local ste_skill=".claude/skills/ste-short/SKILL.md"
+    if [ -n "$conf_lines" ]; then
+      conf_lines="${conf_lines}"$'\n'"${ste_skill}"
+    else
+      conf_lines="$ste_skill"
+    fi
+  fi
+
   # Write .session-context.conf and add SessionStart hook (only if files to inject)
   if [ -n "$conf_lines" ]; then
     mkdir -p "$CWD/.claude/hooks"
@@ -741,9 +752,22 @@ cmd_generate_mcp() {
     fi
   fi
 
-  # Check for custom servers
+  # The obsidian spec store needs an MCP server named obsidian. Add the
+  # default one to a local copy of the config, so the custom-server merge
+  # below writes it. A server named obsidian under mcp.custom replaces it.
+  # ${OBSIDIAN_VAULT_PATH} is written as is; Claude Code expands it.
+  local CONFIG_DATA="$CONFIG_DATA"
+  if [ "$(cfg_get "spec.store")" = "obsidian" ] &&
+     ! echo "$CONFIG_DATA" | grep -q '^mcp\.custom\.obsidian\.'; then
+    CONFIG_DATA="$CONFIG_DATA"$'\n''mcp.custom.obsidian.command=npx'
+    CONFIG_DATA="$CONFIG_DATA"$'\n''mcp.custom.obsidian.args.0=-y'
+    CONFIG_DATA="$CONFIG_DATA"$'\n''mcp.custom.obsidian.args.1=@bitbonsai/mcpvault@latest'
+    CONFIG_DATA="$CONFIG_DATA"$'\n''mcp.custom.obsidian.args.2=${OBSIDIAN_VAULT_PATH}'
+  fi
+
+  # Check for custom servers (grep exits 1 when there are none)
   local custom_names=""
-  custom_names=$(echo "$CONFIG_DATA" | grep "^mcp\.custom\." | sed 's/^mcp\.custom\.\([^.]*\)\..*/\1/' | sort -u)
+  custom_names=$(echo "$CONFIG_DATA" | grep "^mcp\.custom\." | sed 's/^mcp\.custom\.\([^.]*\)\..*/\1/' | sort -u) || true
 
   if [ -z "$custom_names" ]; then
     # No custom servers — wrap preset content

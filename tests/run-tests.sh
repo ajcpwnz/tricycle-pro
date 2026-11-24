@@ -270,7 +270,7 @@ run_test "session-context hook skips placeholder constitution" bash -c '
   dir="'"$TMPDIR_INIT"'/init-single"
   printf "# Project Constitution\n\n_Run \`/trc.constitution\` to populate this file._\n" > "$dir/.trc/memory/constitution.md"
   output=$(cd "$dir" && echo "{}" | bash .claude/hooks/session-context.sh 2>/dev/null)
-  [ -z "$output" ]
+  ! printf "%s" "$output" | grep -q "trc.constitution"
 '
 
 run_test "session-context hook includes extra configured files" bash -c '
@@ -779,6 +779,81 @@ run_test "without --provision-worktree no WORKTREE_PATH key in JSON (backwards c
   rm -rf "$dir"
 '
 
+# ── Generate mcp (obsidian spec store) ──
+
+echo ""
+echo "Generate mcp (obsidian spec store):"
+
+# mcp_fx <config body>: temp project with that config, runs generate mcp, prints its dir.
+mcp_fx() {
+  local d
+  d=$(mktemp -d)
+  printf 'project:\n  name: m\n%b' "$1" > "$d/tricycle.config.yml"
+  (cd "$d" && "$CLI" generate mcp >/dev/null 2>&1)
+  printf '%s' "$d"
+}
+
+MCP_OBS_PRESET=$(mcp_fx 'mcp:\n  preset: minimal\nspec:\n  store: obsidian\n')
+MCP_OBS_NOPRESET=$(mcp_fx 'spec:\n  store: obsidian\n')
+MCP_OBS_CUSTOM=$(mcp_fx 'mcp:\n  custom:\n    obsidian:\n      command: node\n      args:\n        - "vault.js"\nspec:\n  store: obsidian\n')
+MCP_OBS_EXTRA=$(mcp_fx 'mcp:\n  preset: minimal\n  custom:\n    extra:\n      command: node\n      args:\n        - "x.js"\nspec:\n  store: obsidian\n')
+MCP_OBS_PREFIX=$(mcp_fx 'mcp:\n  custom:\n    obsidian-x:\n      command: node\nspec:\n  store: obsidian\n')
+MCP_REPO=$(mcp_fx 'mcp:\n  preset: minimal\nspec:\n  store: repo\n')
+MCP_NOSPEC=$(mcp_fx 'mcp:\n  preset: minimal\n')
+
+run_test "generate mcp obsidian + preset: valid JSON with github and obsidian, exact args" \
+  python3 -c '
+import json, sys
+s = json.load(open(sys.argv[1]))["mcpServers"]
+assert "github" in s and "obsidian" in s
+assert s["obsidian"]["command"] == "npx"
+assert s["obsidian"]["args"] == ["-y", "@bitbonsai/mcpvault@latest", "${OBSIDIAN_VAULT_PATH}"]
+' "$MCP_OBS_PRESET/.mcp.json"
+
+run_test "generate mcp obsidian, no preset: valid JSON with only obsidian" \
+  python3 -c '
+import json, sys
+s = json.load(open(sys.argv[1]))["mcpServers"]
+assert sorted(s) == ["obsidian"]
+' "$MCP_OBS_NOPRESET/.mcp.json"
+
+run_test "generate mcp: mcp.custom.obsidian replaces the default" bash -c '
+  [ "$(grep -c "\"obsidian\":" "$1")" = "1" ] &&
+  python3 -c "
+import json, sys
+o = json.load(open(sys.argv[1]))[\"mcpServers\"][\"obsidian\"]
+assert o[\"command\"] == \"node\" and o[\"args\"] == [\"vault.js\"]
+" "$1"
+' _ "$MCP_OBS_CUSTOM/.mcp.json"
+
+run_test "generate mcp obsidian + preset + custom extra: names are github, extra, obsidian" \
+  python3 -c '
+import json, sys
+s = json.load(open(sys.argv[1]))["mcpServers"]
+assert sorted(s) == ["extra", "github", "obsidian"]
+assert s["obsidian"]["command"] == "npx"
+' "$MCP_OBS_EXTRA/.mcp.json"
+
+run_test "generate mcp: custom obsidian-x does not replace the default obsidian" \
+  python3 -c '
+import json, sys
+s = json.load(open(sys.argv[1]))["mcpServers"]
+assert sorted(s) == ["obsidian", "obsidian-x"]
+assert s["obsidian"]["command"] == "npx"
+' "$MCP_OBS_PREFIX/.mcp.json"
+
+run_test "generate mcp spec.store repo: no obsidian server" \
+  python3 -c '
+import json, sys
+assert "obsidian" not in json.load(open(sys.argv[1]))["mcpServers"]
+' "$MCP_REPO/.mcp.json"
+
+run_test "generate mcp with no spec section: no obsidian server" \
+  python3 -c '
+import json, sys
+assert "obsidian" not in json.load(open(sys.argv[1]))["mcpServers"]
+' "$MCP_NOSPEC/.mcp.json"
+
 # ── Status command ──
 
 echo ""
@@ -817,6 +892,18 @@ run_test "status with no specs points to /trc.plan" bash -c '
 run_test "status with a tracker store says where specs live" bash -c '
   d=$(mktemp -d); printf "project:\n  name: e\nspec:\n  store: linear\n" > "$d/tricycle.config.yml"
   (cd "$d" && "'"$CLI"'" status) | grep -q "spec.store: linear"
+'
+
+run_test "status with the linear store prints the unchanged tracker line" bash -c '
+  d=$(mktemp -d); printf "project:\n  name: e\nspec:\n  store: linear\n" > "$d/tricycle.config.yml"
+  (cd "$d" && "'"$CLI"'" status) | grep -qxF "  Specs live in the tracker (spec.store: linear). Check them there."
+'
+
+run_test "status with the obsidian store names the Obsidian vault" bash -c '
+  d=$(mktemp -d); printf "project:\n  name: e\nspec:\n  store: obsidian\n" > "$d/tricycle.config.yml"
+  out=$(cd "$d" && "'"$CLI"'" status)
+  echo "$out" | grep "Obsidian vault" | grep -q "spec.store: obsidian" &&
+  ! echo "$out" | grep -q "in the tracker"
 '
 
 # ── chain-run.sh (TRI-27) ──
