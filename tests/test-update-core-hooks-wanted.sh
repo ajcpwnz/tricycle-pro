@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # init and update install a core hook script only when `generate settings`
 # registers it: its config switch is on and claude.disable_core_hooks does not
-# name it. update removes a managed copy that is no longer wanted.
+# name it. update removes a managed copy that is no longer wanted. With
+# style.artifacts: ste-short, session-context loads the skill at session start.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI="$(cd "$SCRIPT_DIR/.." && pwd)/bin/tricycle"
@@ -18,17 +19,17 @@ write_cfg true 'style:
   artifacts: ste-short
 '
 "$CLI" update >/dev/null 2>&1 || fail "first update exited non-zero"
-for h in guard-main-checkout style-gate rename-on-kickoff graphify-refresh-on-kickoff; do
+for h in guard-main-checkout style-gate rename-on-kickoff graphify-refresh-on-kickoff session-context; do
   [ -f "$H/$h.sh" ] || fail "$h.sh not installed while wanted"
 done
-[ ! -e "$H/session-context.sh" ] || fail "session-context.sh installed with nothing to inject"
+grep -q '"SessionStart"' .claude/settings.json || fail "style.artifacts: ste-short, but no SessionStart hook loads the skill"
 
 write_cfg false 'claude:
   disable_core_hooks:
     - rename-on-kickoff
 '
 "$CLI" update >/dev/null 2>&1 || fail "second update exited non-zero"
-for h in guard-main-checkout style-gate rename-on-kickoff; do
+for h in guard-main-checkout style-gate rename-on-kickoff session-context; do
   [ ! -e "$H/$h.sh" ] || fail "$h.sh kept after it became unwanted"
   ! grep -q "^\.claude/hooks/$h\.sh" .tricycle.lock || fail "$h.sh still in the lock"
 done

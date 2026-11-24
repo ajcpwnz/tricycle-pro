@@ -619,8 +619,11 @@ core_hook_wanted() { # <name without .sh>
     guard-main-checkout) [ "$(cfg_get "worktree.enabled")" = "true" ] ;;
     style-gate) [ "$(cfg_get_or "style.artifacts" "")" = "ste-short" ] ;;
     session-context)
+      # The hook injects the constitution, context.session_start.files, and the
+      # ste-short skill when style.artifacts is ste-short.
       [ "$(cfg_get_or "context.session_start.constitution" "true")" != "false" ] \
-        || [ "$(cfg_count "context.session_start.files")" -gt 0 ] ;;
+        || [ "$(cfg_count "context.session_start.files")" -gt 0 ] \
+        || [ "$(cfg_get_or "style.artifacts" "")" = "ste-short" ] ;;
     *) return 0 ;;
   esac
 }
