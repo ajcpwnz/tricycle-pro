@@ -102,6 +102,24 @@ Before doing anything ELSE (after the rename above):
    - The steps are fixed: `plan`, then `implement`. Workers run exactly these
      two steps, in this order.
 
+6. **Setup questions**. Workers never ask the setup questions of
+   `/trc.plan` and `/trc.implement`. The orchestrator asks them once, here,
+   before any worker starts. A question is due in two cases:
+   - Store question: an `obsidian` MCP server is connected, and
+     `tricycle.config.yml` has no `spec.store` key. The options are `repo`,
+     `linear` and `obsidian`.
+   - Layout questions: `spec.store` is `obsidian`, and the config has no
+     `spec.obsidian` block. They set `spec.dir` (the vault folder),
+     `spec.obsidian.note_name`, `spec.obsidian.frontmatter` and
+     `spec.obsidian.done`.
+   Ask each due question one time with `AskUserQuestion`. Use the order and
+   the options of the setup step in `/trc.plan`. Write each answer to
+   `tricycle.config.yml` on the base branch. Commit that change before you
+   start workers, so that each worktree has it. If `spec.store` is
+   `obsidian` and no `obsidian` MCP server is connected, STOP. Tell the user
+   to run `tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart
+   Claude Code.
+
 ## Resume Detection
 
 Call the helper to find any interrupted runs from a previous session:
@@ -140,9 +158,11 @@ Wait for the user's choice for each run before proceeding.
     for this issue. On mismatch → surface to the user:
     `[R]e-run implement step / [S]kip issue / [A]bort band`.
   - **`in_progress`** → check that the artifacts of every step in
-    `steps_completed` exist on disk in the issue's worktree. For plan, the
-    artifact is the stored spec, at `<spec.dir>/<issue-id>.md` or in the
-    ticket. For implement, it is `git -C <worktree> log`. On match → respawn
+    `steps_completed` exist. For plan, the artifact is the stored spec: the
+    file `<spec.dir>/<issue-id>.md` in the worktree, the ticket, or the vault
+    note `<spec.dir>/<issue-id>.md`. Check a vault note through the
+    `obsidian` MCP server, not on disk. For implement, it is
+    `git -C <worktree> log`. On match → respawn
     a FRESH worker (the old one is gone). Use the Worker Brief with the
     **respawn-resume preamble** (see Worker Brief variants), and start at
     the first uncompleted step. On mismatch (state says a step completed
@@ -424,6 +444,8 @@ EXECUTE: run `/trc.<step-name> <issue-id>` for this issue, unattended.
     spec. A validator PASS is the approval: store the spec and report.
     Only input that only the user holds stops the step: report `blocked`
     with the question.
+    Do not ask the setup questions. If one is due, report `blocked` with
+    the question.
   - implement: run it through lint, tests and the version bump. Skip its
     push and worktree-cleanup sections: the orchestrator owns everything
     remote.
@@ -523,8 +545,9 @@ fresh worker replaces a dead one):
 
 ```
 RESUME CONTEXT: a previous worker already completed steps <list> for this
-sub-issue. Their artifacts exist: the spec at `<spec.dir>/<issue-id>.md` or in
-the ticket, and the commits in your worktree.
+sub-issue. Their artifacts exist: the spec (the file `<spec.dir>/<issue-id>.md`,
+the ticket, or the vault note `<spec.dir>/<issue-id>.md`), and the commits in
+your worktree.
 VERIFY they exist, read them for context, do NOT regenerate them. Your
 work starts at step <k>: <step-name>.
 ```

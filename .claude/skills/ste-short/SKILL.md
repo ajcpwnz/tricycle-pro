@@ -23,5 +23,6 @@ meant. Write it in short Simplified Technical English (ASD-STE100):
 
 Code blocks, inline code, commands, paths and quoted errors stay as they are.
 
-When you have the asd-ste100 plugin, the style gate lints this prose before it
-lands and blocks on a rule break. Rewrite only the flagged sentences.
+Write it right in the first draft. When you have the asd-ste100 plugin, the
+style gate lints this prose. It does not block. It names the flagged sentences,
+and you fix each one with one small Edit. Commit messages are not gated.

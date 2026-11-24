@@ -9,9 +9,21 @@ order: 15
 
 ## Validation gate
 
-Run the `trc-spec-validator` agent with model `{{models.validator}}`, giving it the
-full spec text and the repository root. Do this even when the spec says `Status: validated`: the code
-may have moved since.
+Read the status line of the spec.
 
-On FAIL, do not start. Report the findings and tell the user to run
-`/trc.plan <input>`, which revalidates and fixes the spec. Do not fix the spec here.
+- **`Status: validated @ <sha>`:** run `git diff --name-only <sha>`. If no file
+  that the spec cites is in the output, the spec is current. Start, and do not
+  run the validator.
+- **Other status, or a cited file changed:** run the `trc-spec-validator` agent
+  one time, with model `{{models.validator}}`. Give it the full spec text and the
+  repository root.
+
+On PASS, start. Add each new handoff to the `## Implementer Notes` section of the
+spec.
+
+In obsidian mode, write the handoffs with the patch tool of the `obsidian` server.
+The `git diff` check does not see changes to the note itself. It sees only the
+repo files that the spec cites.
+
+On FAIL, do not start. Report the blockers and tell the user to run
+`/trc.plan <input>`. Do not fix the spec here.

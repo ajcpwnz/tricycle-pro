@@ -42,11 +42,12 @@ After init, open Claude Code and run:
 
 ### The spec
 
-One file, three parts (`core/templates/spec-template.md`):
+One file (`core/templates/spec-template.md`). The spec says what to build and why, not each edit:
 
 - **Analysis:** the problem, current behavior with `path:line` references, constraints, out of scope.
 - **Proposed Solution:** the approach, decisions with the alternatives they beat, risks.
 - **Checklist:** one line per outcome, each naming its proof. Outcomes, not edit instructions.
+- **Implementer Notes:** handoffs from the validator, for the implementer to resolve.
 
 Where it lives is set by `spec.store`:
 
@@ -54,18 +55,20 @@ Where it lives is set by `spec.store`:
 spec:
   store: repo        # repo: <spec.dir>/<id>.md, committed with the work
                      # linear: the ticket description is the spec
+                     # obsidian: the note <spec.dir>/<id>.md in an Obsidian vault
   dir: docs/specs
 ```
 
+**Obsidian store:** with `spec.store: obsidian`, `spec.dir` is a folder relative to the vault root. The commands read and write the note through the MCP server named `obsidian`. `tricycle generate mcp` adds that server with `@bitbonsai/mcpvault`, which needs Node.js v22.12.0 or later. Set `OBSIDIAN_VAULT_PATH` to the vault path, then restart Claude Code. To use a different server, define `mcp.custom.obsidian`. It replaces the default. The first `/trc.plan` or `/trc.implement` asks the setup questions one time and saves the answers in `tricycle.config.yml`. The store question comes only when an `obsidian` server is already connected. If you do not have one, set `spec.store: obsidian` by hand. The layout questions set `spec.dir`, `spec.obsidian.note_name` (`id` or `id-title`), `spec.obsidian.frontmatter` (`none` or `properties`) and `spec.obsidian.done` (`stay` or `move`).
+
 ### Validation
 
-The `trc-spec-validator` agent (installed to `.claude/agents/`) reads the spec and the code with no context from the session that wrote it, and returns PASS or FAIL. It checks:
+The `trc-spec-validator` agent (installed to `.claude/agents/`) reads the spec and the code with no context from the session that wrote it, and returns PASS or FAIL. The writer and the validator use one rubric, `core/templates/spec-rubric.md` (installed to `.trc/templates/`). Each finding is a `blocker` or a `handoff`:
 
-- **Truthfulness:** every `path:line`, named file, function or behavior claim against the code.
-- **Ambiguity:** anything two engineers would build differently, and any open question.
-- **Quality:** cause over symptom, compliance with `CLAUDE.md` and the constitution, provable checklist lines that cover the whole solution.
+- **Blocker:** building the spec as written breaks the app or the feature. Examples: the design rests on code that does not exist, a copy that would break stays unchanged, a project rule is broken, a question only the user can answer is open.
+- **Handoff:** everything else, such as an off `path:line`, an implementation choice or a weak proof. The implementer resolves it during the work.
 
-`/trc.plan` fixes findings and asks the user what only the user can settle. `/trc.implement` never fixes the spec: on FAIL it stops and points to `/trc.plan`.
+`/trc.plan` fixes each blocker, asks the user what only the user can settle, and runs the validator again to test the fix (three rounds at most). On PASS it copies the handoffs into the `## Implementer Notes` section of the spec and sets `Status: validated @ <sha>`. `/trc.implement` resolves each implementer note as part of the work. It runs the validator only when a file that the spec cites changed after that commit, and on FAIL it stops and points to `/trc.plan`.
 
 ### Writing style (optional)
 
@@ -74,9 +77,9 @@ Two plugins set the register, and trc wires them in only when they are installed
 | Where | Style | Plugin | How trc applies it |
 |-------|-------|--------|--------------------|
 | Chat | `ultracave` (terse fragments, payload only) | [caveman](https://github.com/JuliusBrussee/caveman) | `style.chat` writes `.caveman.json`. The plugin injects its rules at session start, after compaction, on every turn and into every subagent. |
-| Persisted prose: docs, specs, commits, PR bodies, tickets | Short ASD-STE100 (the `ste-short` skill) | [asd-ste100](https://github.com/danyuchn/asd-ste100-skill) | `style.artifacts: ste-short` registers `style-gate.sh`. It lints the added prose with the plugin's linter and blocks on a hard finding. Commit messages follow the skill but are not gated. |
+| Persisted prose: docs, specs, commits, PR bodies, tickets | Short ASD-STE100 (the `ste-short` skill) | [asd-ste100](https://github.com/danyuchn/asd-ste100-skill) | `style.artifacts: ste-short` injects the skill at session start, so the first draft follows the rules. It also registers `style-gate.sh`, which lints the added prose with the plugin's linter. The gate never blocks: it names the flagged sentences, and the agent fixes each one with a small edit. Commit messages follow the skill but are not gated. |
 
-Without a plugin, its part does nothing: `.caveman.json` is inert and `style-gate.sh` exits 0. A chat style is advice to the model. The artifact gate is a check the model cannot skip.
+Without a plugin, its part does nothing: `.caveman.json` is inert and `style-gate.sh` exits 0. A chat style is advice to the model. The artifact gate is a check that runs on every write.
 
 ### Models and workers
 
@@ -129,18 +132,20 @@ Each command is assembled from **blocks**: markdown files with YAML frontmatter 
 
 | Block | Order | Required | Description |
 |-------|-------|----------|-------------|
+| `setup-store` | 5 | yes | Ask the spec store and vault layout questions once |
 | `resolve-input` | 10 | yes | New work, or an existing spec to revalidate |
 | `plan-mode` | 15 | no | Enter Claude Code plan mode unless the work is trivial |
 | `graphify-context` | 25 | no | Graphify briefing (runtime gate) |
 | `research` | 30 | yes | Ground the spec in the code and the rules |
 | `write-spec` | 40 | yes | Fill the spec template |
-| `validate` | 50 | yes | Validator loop: fix, ask, revalidate |
-| `store-spec` | 60 | yes | Write to the repo or the tracker |
+| `validate` | 50 | yes | Fix blockers and revalidate, hand the rest to the implementer |
+| `store-spec` | 60 | yes | Write to the repo, the tracker or the Obsidian vault |
 
 **Implement:**
 
 | Block | Order | Required | Description |
 |-------|-------|----------|-------------|
+| `setup-store` | 5 | yes | Ask the spec store and vault layout questions once |
 | `load-spec` | 10 | yes | Load the spec named by the input |
 | `validate-gate` | 15 | yes | Refuse to start on a failing spec |
 | `graphify-context` | 25 | no | Graphify briefing (runtime gate) |
@@ -372,7 +377,7 @@ apps:
     test: "npm test"
 
 spec:
-  store: repo                     # repo | linear
+  store: repo                     # repo | linear | obsidian
   dir: docs/specs
 
 workflow:
@@ -416,7 +421,7 @@ claude:                           # sources for .claude/settings.json
 ```yaml
 style:                            # optional; each part works only when its plugin is installed
   chat: ultracave                 # caveman plugin default mode, written to .caveman.json
-  artifacts: ste-short            # registers style-gate: persisted prose must pass the asd-ste100 linter
+  artifacts: ste-short            # injects the ste-short skill and registers style-gate (flags, never blocks)
 ```
 
 Core hooks: `guard-main-checkout` (when `worktree.enabled`), `rename-on-kickoff`, `graphify-refresh-on-kickoff`, `session-context`, `style-gate` (when `style.artifacts: ste-short`). Repo hook scripts live in `.claude/hooks/` next to them. `tricycle update` never touches a file that core does not ship.
