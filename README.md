@@ -98,7 +98,7 @@ Two commands run the workflow across multiple tickets instead of one:
 
 | Command | Shape | Execution | Push policy |
 |---------|-------|-----------|-------------|
-| `/trc.chain TRI-100..TRI-105` | Flat range/list of 2–8 independent tickets | Serial, fire-and-report worker per ticket | Approval per ticket |
+| `/trc.chain TRI-100..TRI-105` | Flat range/list of 2–8 tickets | Up to `chain.max_parallel` (default 2) workers at a time. A ticket that another ticket in the run blocks starts after its blocker | Approval per ticket |
 | `/trc.band TRI-200` | One parent issue broken into sub-issues | Parallel step-controlled workers in dependency waves | One approval for the whole epic |
 
 `/trc.band` takes a parent Linear issue and fetches its sub-issues. It writes a codebase recon into `specs/.band-runs/<run-id>/recon.md`: a high-level epic spec from `recon-template.md`. The recon holds a dependency roadmap: waves of parallel-safe sub-issues, a complexity rating, and a worker model for each sub-issue.
