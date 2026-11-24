@@ -92,22 +92,9 @@ Before doing anything ELSE (after the rename above):
    checkout before dogfood), substitute `core/scripts/bash/chain-run.sh` in
    every invocation.
 
-4. **Setup questions**. Workers never ask the setup questions of
-   `/trc.plan` and `/trc.implement`. The orchestrator asks them once, here,
-   before any worker starts. A question is due in two cases:
-   - Store question: an `obsidian` MCP server is connected, and
-     `tricycle.config.yml` has no `spec.store` key. The options are `repo`,
-     `linear` and `obsidian`.
-   - Layout questions: `spec.store` is `obsidian`, and the config has no
-     `spec.obsidian` block. They set `spec.dir` (the vault folder),
-     `spec.obsidian.note_name`, `spec.obsidian.frontmatter` and
-     `spec.obsidian.done`.
-   Ask each due question one time with `AskUserQuestion`. Use the order and
-   the options of the setup step in `/trc.plan`. Write each answer to
-   `tricycle.config.yml` on the base branch. Commit that change before you
-   start workers, so that each worktree has it. If `spec.store` is
-   `obsidian` and no `obsidian` MCP server is connected, STOP. Tell the user
-   to run `tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart
+4. **Obsidian server**. If `spec.store` is `obsidian` and no `obsidian`
+   MCP server is connected, STOP. Tell the user to run
+   `tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart
    Claude Code.
 
 ## Resume Detection
@@ -444,8 +431,6 @@ unattended:
     PASS is the approval: store the spec and continue. If the spec needs
     input only the user holds, or blockers remain after three validator
     rounds, return `status: "failed"` and put the reason in `worker_error`.
-    Do not ask the setup questions. If one is due, return `status: "failed"`
-    and put the question in `worker_error`.
   - /trc.implement: run it through lint, tests and the version bump. Skip its
     push and worktree-cleanup sections: the orchestrator owns everything
     remote.

@@ -283,6 +283,7 @@ choose() {
 
   local answer
   answer=$(prompt "Choice (1-${#options[@]})" "$((default_idx + 1))")
+  case "$answer" in ''|*[!0-9]*) answer=$((default_idx + 1)) ;; esac
   local idx=$((answer - 1))
   if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#options[@]}" ]; then
     echo "$idx"

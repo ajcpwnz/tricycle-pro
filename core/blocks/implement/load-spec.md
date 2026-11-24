@@ -18,6 +18,7 @@ the `obsidian` MCP server. In mcpvault, this tool is `read_note`. The note name
 follows `spec.obsidian.note_name`. If the `obsidian` server is not connected, stop.
 Tell the user to run `tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart Claude Code.
 Do not fall back to a repo file.
+A missing `spec.obsidian` key takes its default: `note_name: id`, `frontmatter: none`, `done: stay`.
 
 If no spec with `Analysis`, `Proposed Solution` and `Checklist` exists, stop and
 tell the user to run `/trc.plan <input>` first.

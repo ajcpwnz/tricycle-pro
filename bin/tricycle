@@ -740,7 +740,73 @@ BLOCK
   fi
 }
 
+# setup_obsidian_store: with spec.store obsidian and no spec.obsidian block,
+# ask the four vault layout questions (stdin, so tests can pipe answers; EOF
+# takes the defaults) and write the answers under spec: in tricycle.config.yml.
+# Comments and all other lines stay. With spec.obsidian present, do nothing.
+setup_obsidian_store() {
+  [ "$(cfg_get "spec.store")" = "obsidian" ] || return 0
+  echo "$CONFIG_DATA" | grep -q '^spec\.obsidian\.' && return 0
+
+  local cfg="$CWD/tricycle.config.yml"
+  echo "" >&2
+  echo "Obsidian spec store: tricycle.config.yml has no spec.obsidian block." >&2
+  echo "Answer 4 questions. Press Enter for the default." >&2
+  echo "" >&2
+
+  local dir idx note_name frontmatter done_mode
+  dir=$(prompt "Vault folder for specs, relative to the vault root" "$(cfg_get_or "spec.dir" "Specs")")
+  idx=$(choose "Note name:" 0 "id (<id>.md)" "id-title (<id> <title>.md)")
+  note_name=$([ "$idx" = "1" ] && echo id-title || echo id)
+  idx=$(choose "Frontmatter:" 0 "none" "properties (status, source, tags: [spec])")
+  frontmatter=$([ "$idx" = "1" ] && echo properties || echo none)
+  idx=$(choose "Done specs:" 0 "stay (keep the note in the vault folder)" "move (to <vault folder>/done after merge)")
+  done_mode=$([ "$idx" = "1" ] && echo move || echo stay)
+  echo "" >&2
+
+  # Quote the folder when YAML would misread it as a plain scalar.
+  dir="${dir//\"/}"
+  local dir_yaml="$dir"
+  case "$dir" in
+    *": "*|*" #"*|*:|[-?:,\[\]\{\}#\&\*!\|\>\'%@\`]*|" "*|*" ") dir_yaml="\"$dir\"" ;;
+  esac
+
+  local tmp="$cfg.tmp.$$"
+  awk -v dir="$dir_yaml" -v nn="$note_name" -v fm="$frontmatter" -v dn="$done_mode" '
+    function emit(   i) {
+      if (ind == "") ind = "  "
+      if (!dir_done) printf "%sdir: %s\n", ind, dir
+      printf "%sobsidian:\n", ind
+      printf "%s%snote_name: %s\n", ind, ind, nn
+      printf "%s%sfrontmatter: %s\n", ind, ind, fm
+      printf "%s%sdone: %s\n", ind, ind, dn
+      for (i = 1; i <= np; i++) print pend[i]
+      np = 0; emitted = 1
+    }
+    in_spec && /^[^ \t#]/ { emit(); in_spec = 0 }
+    /^spec:[ \t]*(#.*)?$/ && !emitted { in_spec = 1; seen = 1; print; next }
+    in_spec {
+      if ($0 ~ /^[ \t]*$/ || $0 ~ /^[ \t]*#/) { pend[++np] = $0; next }
+      for (i = 1; i <= np; i++) print pend[i]
+      np = 0
+      if (ind == "") { match($0, /^[ \t]+/); ind = substr($0, 1, RLENGTH) }
+      if ($0 ~ "^" ind "dir:") { printf "%sdir: %s\n", ind, dir; dir_done = 1; next }
+      print; next
+    }
+    { print }
+    END {
+      if (in_spec) { if (ind == "") ind = "  "; emit() }
+      else if (!seen) { ind = "  "; print "spec:"; emit() }
+    }
+  ' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+
+  info "UPDATE tricycle.config.yml (spec.dir: $dir, spec.obsidian: note_name $note_name, frontmatter $frontmatter, done $done_mode)"
+  load_config
+}
+
 cmd_generate_mcp() {
+  setup_obsidian_store
+
   local mcp_preset
   mcp_preset=$(cfg_get "mcp.preset")
   local preset_content="{}"
@@ -1263,6 +1329,33 @@ cmd_dogfood() {
     done < <(find "$src_dir" -type f | sort)
   done
 
+  # Lock-tracked mirror files whose core/ source no longer exists are stale.
+  # Only lock entries count, so runtime files in the mirror stay. A file that a
+  # module ships into the same directory stays too.
+  local to_remove_count=0 to_remove_lines="" to_remove_paths=""
+  local lpath lrel lsrc lsub
+  while IFS=$'\t' read -r lpath _; do
+    [ -n "$lpath" ] || continue
+    lsrc=""
+    for mapping in "${TRICYCLE_MANAGED_PATHS[@]}"; do
+      dest_rel="${mapping#*:}"
+      case "$lpath" in "$dest_rel"/*) lrel="${lpath#"$dest_rel"/}"; lsrc="$CWD/${mapping%%:*}/$lrel" ;; esac
+    done
+    [ -n "$lsrc" ] && [ ! -f "$lsrc" ] || continue
+    case "$lpath" in
+      .claude/commands/*) lsub=commands ;;
+      .claude/hooks/*) lsub=hooks ;;
+      .trc/templates/*) lsub=templates ;;
+      *) lsub="" ;;
+    esac
+    if [ -n "$lsub" ] && compgen -G "$CWD/modules/*/$lsub/$lrel" >/dev/null; then
+      continue
+    fi
+    to_remove_lines="${to_remove_lines}  REMOVE $lpath"$'\n'
+    to_remove_paths="${to_remove_paths}${lpath}"$'\n'
+    to_remove_count=$((to_remove_count + 1))
+  done <<< "$LOCK_FILES"
+
   # Unmapped-core guard (FR-008): collect top-level dirs directly under
   # core/ that no mapping claims. `core/skills/` is intentionally excluded
   # (FR-007) — skills have their own upstream-fetch flow. OS noise
@@ -1295,11 +1388,12 @@ cmd_dogfood() {
 
   # Print dry-run report.
   echo ""
-  if [ "$to_add_count" -eq 0 ] && [ "$to_write_count" -eq 0 ]; then
+  if [ "$to_add_count" -eq 0 ] && [ "$to_write_count" -eq 0 ] && [ "$to_remove_count" -eq 0 ]; then
     echo "Nothing to do — .trc/ and .claude/ already mirror core/."
   else
     [ -n "$to_add_lines" ] && printf '%s' "$to_add_lines"
     [ -n "$to_write_lines" ] && printf '%s' "$to_write_lines"
+    [ -n "$to_remove_lines" ] && printf '%s' "$to_remove_lines"
   fi
   if [ -n "$unmapped_lines" ]; then
     echo ""
@@ -1310,9 +1404,9 @@ cmd_dogfood() {
 
   # Confirmation gate.
   if [ "$do_write" -eq 0 ]; then
-    if [ "$to_add_count" -gt 0 ] || [ "$to_write_count" -gt 0 ]; then
+    if [ "$to_add_count" -gt 0 ] || [ "$to_write_count" -gt 0 ] || [ "$to_remove_count" -gt 0 ]; then
       echo ""
-      echo "Would: $to_add_count added, $to_write_count adopted."
+      echo "Would: $to_add_count added, $to_write_count adopted, $to_remove_count removed."
       echo "Dry run. Re-run with --yes to apply."
     fi
     return 0
@@ -1354,9 +1448,19 @@ cmd_dogfood() {
     done < <(find "$src_dir" -type f | sort)
   done
 
+  local removed=0 ldir
+  while IFS= read -r lpath; do
+    [ -n "$lpath" ] || continue
+    rm -f "$CWD/$lpath"; lock_remove "$lpath"
+    # Delete the directories that the removal left empty.
+    ldir=$(dirname "$CWD/$lpath")
+    while [ "$ldir" != "$CWD" ] && rmdir "$ldir" 2>/dev/null; do ldir=$(dirname "$ldir"); done
+    removed=$((removed + 1))
+  done <<< "$to_remove_paths"
+
   save_lock
   echo ""
-  echo "$created added, $written adopted."
+  echo "$created added, $written adopted, $removed removed."
 }
 
 # ─── Hello World ─────────────────────────────────────────────────────────────

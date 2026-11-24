@@ -22,9 +22,9 @@ headings() { grep '^## ' "$1" | tr '\n' '|'; }
 assemble "$TMP/none.yml" "$TMP/default"
 [ "$(ls "$TMP/default" | tr '\n' ' ')" = "trc.implement.md trc.plan.md " ] \
   || fail "assembler must write exactly trc.plan.md and trc.implement.md, got: $(ls "$TMP/default")"
-[ "$(headings "$TMP/default/trc.plan.md")" = "## User Input|## Store setup|## Resolve the input|## Plan mode|## Graphify Context|## Research|## Write the spec|## Validation|## Store|" ] \
+[ "$(headings "$TMP/default/trc.plan.md")" = "## User Input|## Resolve the input|## Plan mode|## Graphify Context|## Research|## Write the spec|## Validation|## Store|" ] \
   || fail "default plan sections: $(headings "$TMP/default/trc.plan.md")"
-[ "$(headings "$TMP/default/trc.implement.md")" = "## User Input|## Store setup|## Load the spec|## Validation gate|## Graphify Context|## Work the checklist|## Lint and test|## Version bump|## Push, PR & Deploy|" ] \
+[ "$(headings "$TMP/default/trc.implement.md")" = "## User Input|## Load the spec|## Validation gate|## Graphify Context|## Work the checklist|## Lint and test|## Version bump|## Push, PR & Deploy|" ] \
   || fail "default implement sections: $(headings "$TMP/default/trc.implement.md")"
 grep -q '^description: ' "$TMP/default/trc.plan.md" || fail "plan has no description frontmatter"
 grep -q 'trc-spec-validator' "$TMP/default/trc.plan.md" || fail "plan does not run the validator"
@@ -49,22 +49,19 @@ grep -q 'Implementer Notes' "$I" || fail "implement does not resolve implementer
 cmp -s "$P" "$REPO_ROOT/core/commands/trc.plan.md" || fail "core/commands/trc.plan.md differs from the assembled default"
 cmp -s "$I" "$REPO_ROOT/core/commands/trc.implement.md" || fail "core/commands/trc.implement.md differs from the assembled default"
 
-# Obsidian store: a one-time setup step asks fixed questions, and the store,
-# load, checklist and cleanup sections read and patch the note in the vault.
+# Obsidian store: no setup step in the commands (`tricycle generate mcp` asks
+# the layout questions). The store, load, checklist and cleanup sections read
+# and patch the note in the vault.
 section() { awk -v h="## $2" '$0 == h { f = 1; print; next } /^## / { f = 0 } f' "$1"; }
-body() { awk 'NR == 1 && /^---$/ { fm = 1; next } fm && /^---$/ { fm = 0; next } !fm' "$1"; }
-[ "$(body "$BLOCKS/plan/setup-store.md")" = "$(body "$BLOCKS/implement/setup-store.md")" ] \
-  || fail "plan and implement setup-store bodies differ"
+[ ! -e "$BLOCKS/plan/setup-store.md" ] && [ ! -e "$BLOCKS/implement/setup-store.md" ] \
+  || fail "setup-store block still exists"
 for F in "$P" "$I"; do
-  S=$(section "$F" "Store setup")
-  for k in spec.dir spec.obsidian.note_name spec.obsidian.frontmatter spec.obsidian.done AskUserQuestion; do
-    grep -qF "$k" <<<"$S" || fail "$(basename "$F") setup does not name $k"
-  done
-  grep -qF 'an `obsidian` MCP server is connected and the config has no `spec.store` key' <<<"$S" \
-    || fail "$(basename "$F") setup has no store question trigger"
-  grep -qF 'Do not ask a question again when its key is already in `tricycle.config.yml`' <<<"$S" \
-    || fail "$(basename "$F") setup has no ask-once rule"
-  grep -qF '/trc.chain' <<<"$S" || fail "$(basename "$F") setup does not stop unattended runs"
+  ! grep -qF 'Store setup' "$F" || fail "$(basename "$F") still has the Store setup step"
+  ! grep -qF 'setup-store' "$F" || fail "$(basename "$F") still names setup-store"
+  ! grep -qiE 'AskUserQuestion.*(store|vault|spec\.obsidian)|(store|vault|spec\.obsidian).*AskUserQuestion' "$F" \
+    || fail "$(basename "$F") asks store setup questions"
+  grep -qF 'A missing `spec.obsidian` key takes its default: `note_name: id`, `frontmatter: none`, `done: stay`.' "$F" \
+    || fail "$(basename "$F") has no spec.obsidian defaults"
   grep -qF 'tricycle generate mcp' "$F" && grep -qF 'OBSIDIAN_VAULT_PATH' "$F" \
     && grep -qF 'Do not fall back to a repo file' "$F" || fail "$(basename "$F") has no stop rule for a missing obsidian server"
 done
@@ -136,7 +133,7 @@ P=$(headings "$TMP/cfg/trc.plan.md"); I=$(headings "$TMP/cfg/trc.implement.md")
 case "$P" in *"## Plan mode"*) fail "disabled optional-by-default block still present: $P" ;; esac
 case "$P" in *"## Validation"*) ;; *) fail "required block was disabled: $P" ;; esac
 case "$P" in "## User Input|## Invocation of Divine Guidance|"*) ;; *) fail "enabled optional block missing or misordered: $P" ;; esac
-[ "$I" = "## User Input|## Store setup|## Load the spec|## Validation gate|## Worktree|## Graphify Context|## Work the checklist|## House Rules|## Lint and test|## QA Testing Gate|## Version bump|## Push, PR & Deploy|## Worktree Cleanup|" ] \
+[ "$I" = "## User Input|## Load the spec|## Validation gate|## Worktree|## Graphify Context|## Work the checklist|## House Rules|## Lint and test|## QA Testing Gate|## Version bump|## Push, PR & Deploy|## Worktree Cleanup|" ] \
   || fail "implement with flags and custom block: $I"
 
 grep -qx 'model: opus' "$TMP/cfg/trc.plan.md" || fail "models.plan override ignored"

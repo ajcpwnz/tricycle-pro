@@ -102,22 +102,9 @@ Before doing anything ELSE (after the rename above):
    - The steps are fixed: `plan`, then `implement`. Workers run exactly these
      two steps, in this order.
 
-6. **Setup questions**. Workers never ask the setup questions of
-   `/trc.plan` and `/trc.implement`. The orchestrator asks them once, here,
-   before any worker starts. A question is due in two cases:
-   - Store question: an `obsidian` MCP server is connected, and
-     `tricycle.config.yml` has no `spec.store` key. The options are `repo`,
-     `linear` and `obsidian`.
-   - Layout questions: `spec.store` is `obsidian`, and the config has no
-     `spec.obsidian` block. They set `spec.dir` (the vault folder),
-     `spec.obsidian.note_name`, `spec.obsidian.frontmatter` and
-     `spec.obsidian.done`.
-   Ask each due question one time with `AskUserQuestion`. Use the order and
-   the options of the setup step in `/trc.plan`. Write each answer to
-   `tricycle.config.yml` on the base branch. Commit that change before you
-   start workers, so that each worktree has it. If `spec.store` is
-   `obsidian` and no `obsidian` MCP server is connected, STOP. Tell the user
-   to run `tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart
+6. **Obsidian server**. If `spec.store` is `obsidian` and no `obsidian`
+   MCP server is connected, STOP. Tell the user to run
+   `tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart
    Claude Code.
 
 ## Resume Detection
@@ -444,8 +431,6 @@ EXECUTE: run `/trc.<step-name> <issue-id>` for this issue, unattended.
     spec. A validator PASS is the approval: store the spec and report.
     Only input that only the user holds stops the step: report `blocked`
     with the question.
-    Do not ask the setup questions. If one is due, report `blocked` with
-    the question.
   - implement: run it through lint, tests and the version bump. Skip its
     push and worktree-cleanup sections: the orchestrator owns everything
     remote.

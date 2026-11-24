@@ -58,6 +58,16 @@ parse_yaml() {
       # Trim leading/trailing whitespace from rest
       gsub(/^[[:space:]]+/, "", rest)
       gsub(/[[:space:]]+$/, "", rest)
+      # Drop an inline comment: "# ..." after whitespace. In a quoted value,
+      # only text after the closing quote can be a comment.
+      if (substr(rest, 1, 1) == "#") rest = ""
+      rq = substr(rest, 1, 1)
+      if (rq == "\"" || rq == "\047") {
+        cq = index(substr(rest, 2), rq)
+        if (cq > 0 && substr(rest, cq + 2) ~ /^[[:space:]]+#/) rest = substr(rest, 1, cq + 1)
+      } else {
+        sub(/[[:space:]]+#.*$/, "", rest)
+      }
 
       if (rest == "") {
         # Parent key (no value) — push onto stack

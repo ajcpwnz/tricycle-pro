@@ -18,6 +18,7 @@ server. In mcpvault, these tools are `read_note`, `write_note` and `patch_note`.
 If the `obsidian` server is not connected, stop. Tell the user to run
 `tricycle generate mcp`, set `OBSIDIAN_VAULT_PATH` and restart Claude Code.
 Do not fall back to a repo file.
+A missing `spec.obsidian` key takes its default: `note_name: id`, `frontmatter: none`, `done: stay`.
 
 Classify the user input:
 

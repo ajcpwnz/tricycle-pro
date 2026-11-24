@@ -367,6 +367,17 @@ run_test "skills disable skips listed skills" bash -c '
   [ -d ".claude/skills/code-reviewer" ] && [ -d ".claude/skills/debugging" ]
 '
 
+run_test "parse_yaml drops inline comments, keeps # inside quotes and URLs" bash -c '
+  source "'"$REPO_ROOT"'/bin/lib/yaml_parser.sh"
+  f=$(mktemp)
+  printf "spec:\n  store: obsidian  # c\n  dir: \"a # b\"   # c\n  url: http://x/#frag\nmcp:   # c\n  preset: minimal\n" > "$f"
+  out=$(parse_yaml "$f")
+  printf "%s\n" "$out" | grep -qx "spec.store=obsidian" &&
+  printf "%s\n" "$out" | grep -qx "spec.dir=a # b" &&
+  printf "%s\n" "$out" | grep -qx "spec.url=http://x/#frag" &&
+  printf "%s\n" "$out" | grep -qx "mcp.preset=minimal"
+'
+
 run_test "skills list command exits 0" bash -c '
   cd "'"$TMPDIR_INIT"'/init-single"
   "'"$CLI"'" skills list >/dev/null 2>&1
@@ -789,7 +800,7 @@ mcp_fx() {
   local d
   d=$(mktemp -d)
   printf 'project:\n  name: m\n%b' "$1" > "$d/tricycle.config.yml"
-  (cd "$d" && "$CLI" generate mcp >/dev/null 2>&1)
+  (cd "$d" && "$CLI" generate mcp </dev/null >/dev/null 2>&1)
   printf '%s' "$d"
 }
 
@@ -853,6 +864,54 @@ run_test "generate mcp with no spec section: no obsidian server" \
 import json, sys
 assert "obsidian" not in json.load(open(sys.argv[1]))["mcpServers"]
 ' "$MCP_NOSPEC/.mcp.json"
+
+# Store layout setup: generate mcp asks the four questions once, from stdin.
+# obs_cfg <spec body>: temp project with store obsidian, prints its dir.
+obs_cfg() {
+  local d
+  d=$(mktemp -d)
+  printf 'project:\n  name: m\n# keep me\nspec:\n  store: obsidian\n%b\nmcp:\n  preset: minimal\n' "$1" > "$d/tricycle.config.yml"
+  printf '%s' "$d"
+}
+
+run_test "generate mcp obsidian setup: piped answers are written to spec" bash -c '
+  d=$1; cd "$d" && printf "Notes/Specs\n2\n2\n2\n" | "$2" generate mcp >/dev/null 2>&1 &&
+  python3 - "$d" <<PY
+import json, sys
+c = open(sys.argv[1] + "/tricycle.config.yml").read()
+assert "spec:\n  store: obsidian\n  dir: Notes/Specs\n  obsidian:\n    note_name: id-title\n    frontmatter: properties\n    done: move\n" in c, c
+assert c.count("dir:") == 1 and "# keep me" in c and "mcp:\n  preset: minimal" in c
+s = json.load(open(sys.argv[1] + "/.mcp.json"))["mcpServers"]
+assert s["obsidian"]["command"] == "npx" and "github" in s
+PY
+' _ "$(obs_cfg '  dir: docs/specs\n')" "$CLI"
+
+run_test "generate mcp obsidian setup: EOF stdin writes the defaults" bash -c '
+  d=$1; cd "$d" && out=$("$2" generate mcp </dev/null 2>&1) &&
+  grep -q "spec.dir: docs/specs, spec.obsidian: note_name id, frontmatter none, done stay" <<<"$out" &&
+  python3 - "$d" <<PY
+c = open(__import__("sys").argv[1] + "/tricycle.config.yml").read()
+assert "  dir: docs/specs\n  obsidian:\n    note_name: id\n    frontmatter: none\n    done: stay\n" in c, c
+PY
+' _ "$(obs_cfg '  dir: docs/specs\n')" "$CLI"
+
+run_test "generate mcp obsidian setup: no spec.dir defaults to Specs" bash -c '
+  cd "$1" && "$2" generate mcp </dev/null >/dev/null 2>&1 &&
+  grep -q "^  dir: Specs$" tricycle.config.yml
+' _ "$(obs_cfg '')" "$CLI"
+
+run_test "generate mcp obsidian setup: spec.obsidian present, no questions, config unchanged" bash -c '
+  cd "$1" && cp tricycle.config.yml before &&
+  out=$(printf "x\n2\n2\n2\n" | "$2" generate mcp 2>&1) &&
+  ! grep -qi "vault folder\|Note name\|Frontmatter\|Done specs\|spec.obsidian" <<<"$out" &&
+  cmp -s before tricycle.config.yml
+' _ "$(obs_cfg '  dir: V\n  obsidian:\n    note_name: id\n')" "$CLI"
+
+run_test "generate mcp store repo: no questions, config unchanged" bash -c '
+  d=$(mktemp -d); cd "$d" && printf "project:\n  name: m\nspec:\n  store: repo\n  dir: docs/specs\n" > tricycle.config.yml &&
+  cp tricycle.config.yml before && out=$(printf "x\n2\n2\n2\n" | "$1" generate mcp 2>&1) &&
+  ! grep -qi "vault folder\|Note name\|Frontmatter\|Done specs" <<<"$out" && cmp -s before tricycle.config.yml
+' _ "$CLI"
 
 # ── Status command ──
 
