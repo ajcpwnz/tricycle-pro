@@ -59,7 +59,30 @@ spec:
   dir: docs/specs
 ```
 
-**Obsidian store:** with `spec.store: obsidian`, `spec.dir` is a folder relative to the vault root. The commands read and write the note through the MCP server named `obsidian`. `tricycle generate mcp` adds that server with `@bitbonsai/mcpvault`, which needs Node.js v22.12.0 or later. Set `OBSIDIAN_VAULT_PATH` to the vault path, then restart Claude Code. To use a different server, define `mcp.custom.obsidian`. It replaces the default. The first `/trc.plan` or `/trc.implement` asks the setup questions one time and saves the answers in `tricycle.config.yml`. The store question comes only when an `obsidian` server is already connected. If you do not have one, set `spec.store: obsidian` by hand. The layout questions set `spec.dir`, `spec.obsidian.note_name` (`id` or `id-title`), `spec.obsidian.frontmatter` (`none` or `properties`) and `spec.obsidian.done` (`stay` or `move`).
+**Obsidian store:** with `spec.store: obsidian`, `spec.dir` is a folder relative to the vault root. The commands read, write and patch the note through the MCP server named `obsidian`. If that server is not connected, the commands stop. They do not fall back to a repo file.
+
+`tricycle generate mcp` adds that server with `@bitbonsai/mcpvault`. This server needs Node.js v22.12.0 or later. Set `OBSIDIAN_VAULT_PATH` to the vault path, then restart Claude Code. To use a different server, define `mcp.custom.obsidian`. It replaces the default.
+
+`tricycle generate mcp` asks the four layout questions once, when `spec.obsidian` is missing. It reads the answers from the terminal and writes them to `tricycle.config.yml`. When `spec.obsidian` exists, it asks nothing. The commands never ask setup questions.
+
+| Question | Key | Options (default first) |
+|----------|-----|-------------------------|
+| Vault folder for specs, relative to the vault root | `spec.dir` | Free text. The default is the current `spec.dir`, or `Specs`. |
+| Note name | `spec.obsidian.note_name` | `id` (`<id>.md`), `id-title` (`<id> <title>.md`) |
+| Frontmatter | `spec.obsidian.frontmatter` | `none`, `properties` (`status`, `source`, `tags: [spec]`) |
+| Done specs | `spec.obsidian.done` | `stay`, `move` (to `<spec.dir>/done` after merge) |
+
+With no terminal input, the CLI writes the defaults and prints them. A missing `spec.obsidian` key takes its default.
+
+```yaml
+spec:
+  store: obsidian
+  dir: Specs
+  obsidian:
+    note_name: id        # id | id-title
+    frontmatter: none    # none | properties
+    done: stay           # stay | move
+```
 
 ### Validation
 
@@ -132,7 +155,6 @@ Each command is assembled from **blocks**: markdown files with YAML frontmatter 
 
 | Block | Order | Required | Description |
 |-------|-------|----------|-------------|
-| `setup-store` | 5 | yes | Ask the spec store and vault layout questions once |
 | `resolve-input` | 10 | yes | New work, or an existing spec to revalidate |
 | `plan-mode` | 15 | no | Enter Claude Code plan mode unless the work is trivial |
 | `graphify-context` | 25 | no | Graphify briefing (runtime gate) |
@@ -145,7 +167,6 @@ Each command is assembled from **blocks**: markdown files with YAML frontmatter 
 
 | Block | Order | Required | Description |
 |-------|-------|----------|-------------|
-| `setup-store` | 5 | yes | Ask the spec store and vault layout questions once |
 | `load-spec` | 10 | yes | Load the spec named by the input |
 | `validate-gate` | 15 | yes | Refuse to start on a failing spec |
 | `graphify-context` | 25 | no | Graphify briefing (runtime gate) |
@@ -314,7 +335,7 @@ Skills are prompt modules in `.claude/skills/`. Claude Code reads each skill's d
 
 ## SessionStart Hook
 
-The SessionStart hook auto-injects the project constitution and configured context files into Claude's context at the start of every session — no manual command needed.
+The SessionStart hook adds context at the start of every session. It adds the project constitution and the files in `context.session_start.files`. With `style.artifacts: ste-short`, it also adds the `ste-short` skill. Each of these three settings installs the hook alone.
 
 ```yaml
 # tricycle.config.yml
@@ -335,10 +356,11 @@ tricycle init [--preset <name>]     # Initialize project
 tricycle add <module>               # Add module (worktree, qa, ci-watch, mcp, memory)
 tricycle assemble [--dry-run]       # Assemble commands from blocks
 tricycle generate <target>          # Generate files (claude-md, settings, mcp, gitignore)
+                                    # mcp also asks the Obsidian layout questions once
 tricycle skills list                # List installed skills and their status
 tricycle status [<spec id>] [--json]  # Spec status and checklist progress
 tricycle update [--dry-run]         # Overwrite core files, remove dropped ones, re-assemble
-tricycle dogfood [--yes]            # Mirror core/ into this repo (tricycle-pro only)
+tricycle dogfood [--yes]            # Mirror core/ into this repo, remove dropped copies (tricycle-pro only)
 tricycle update-self                # Update CLI itself
 tricycle validate                   # Validate configuration
 tricycle graphify <sub>             # Manage optional graphify integration
@@ -378,7 +400,11 @@ apps:
 
 spec:
   store: repo                     # repo | linear | obsidian
-  dir: docs/specs
+  dir: docs/specs                 # obsidian: a folder relative to the vault root
+  # obsidian:                     # written by `tricycle generate mcp` (see The spec)
+  #   note_name: id               # id | id-title
+  #   frontmatter: none           # none | properties
+  #   done: stay                  # stay | move
 
 workflow:
   blocks:

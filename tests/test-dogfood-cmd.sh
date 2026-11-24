@@ -149,6 +149,27 @@ chmod +x "$META/core/scripts/bash/helper.sh"
 [ -x "$META/.trc/scripts/bash/helper.sh" ] \
     || { echo "FAIL [f]: +x not restored by --yes on overwrite"; exit 1; }
 
+# ── Case (f2): core/ file deleted → --yes removes the lock-tracked mirror ──
+
+printf 'gone soon\n' > "$META/core/commands/old.md"
+printf 'runtime\n' > "$META/.claude/commands/untracked.md"
+(cd "$META" && bash "$META/bin/tricycle" dogfood --yes >/dev/null 2>&1)
+rm -f "$META/core/commands/old.md"
+out=$(cd "$META" && bash "$META/bin/tricycle" dogfood 2>&1)
+printf '%s' "$out" | grep -q "REMOVE .claude/commands/old.md" \
+    || { echo "FAIL [f2]: missing REMOVE line; got:"; echo "$out"; exit 1; }
+[ -f "$META/.claude/commands/old.md" ] \
+    || { echo "FAIL [f2]: dry-run removed the file"; exit 1; }
+out=$(cd "$META" && bash "$META/bin/tricycle" dogfood --yes 2>&1)
+[ ! -e "$META/.claude/commands/old.md" ] \
+    || { echo "FAIL [f2]: stale mirror file not removed"; exit 1; }
+! grep -q '"\.claude/commands/old\.md"' "$META/.tricycle.lock" \
+    || { echo "FAIL [f2]: stale path still in lock"; exit 1; }
+[ -f "$META/.claude/commands/untracked.md" ] \
+    || { echo "FAIL [f2]: untracked mirror file was removed"; exit 1; }
+printf '%s' "$out" | grep -q "0 added, 0 adopted, 1 removed" \
+    || { echo "FAIL [f2]: expected '1 removed' summary; got:"; echo "$out"; exit 1; }
+
 # ── Case (g): ordinary consumer repo (no core/) is no-op ──────────────────
 
 CONSUMER="$TMP/consumer"
